@@ -1,7 +1,12 @@
 #%%
 ''' Import the necessary libraries '''
+from ast import mod
+from cProfile import label
+from fileinput import filename
 import os
 from pyexpat import model
+from turtle import mode
+from matplotlib.pylab import eig
 import numpy as np
 import matplotlib.pyplot as plt
 from input import ModelParameters
@@ -38,9 +43,15 @@ GJ = 78 # torsional stiffness
 eta_w = 0.005 # structural damping ratio in bending
 eta_alpha = 0.005 # structural damping ratio in torsion, damping ratio are arbitrary choosen here
 
+
+
+#%%_________________CAS IAT________________________________
+
+
+
 ''' Wingtip parameters '''
 
-wingtip_mass_study = False
+wingtip_mass_study = True
 if wingtip_mass_study:
     Mt = 362e-3   # mass of the tip body
     I_alpha_t = 6.11e-4 # mass moment of inertia of the tip body
@@ -51,72 +62,150 @@ else:
     I_alpha_t = None
     x_t = None
 
-#%%_________________CAS MAXIME________________________________
 
 s=1.5
+Uc=70
+
+# factor_GJ = np.random.uniform(0.8, 1.2)
+# factor_EIx = np.random.uniform(0.8, 1.2)
+# GJ = GJ * factor_GJ
+# EIx = EIx * factor_EIx
+
+GJ = 71.5
+EIx= 264.1
+
+model_maxime = ModelParameters(s, c, x_ea, x_cg, m, EIx, GJ, eta_w, eta_alpha, Mt, I_alpha_t, x_t, model_aero='Theodorsen')
+model_maxime.Umax=50
+model_maxime.Ustep=100
 
 
-model_cross = ModelParameters(s, c, x_ea, x_cg, m, EIx, GJ, eta_w, eta_alpha, Mt, I_alpha_t, x_t, model_aero='Theodorsen')
-model_cross.Umax=35
-f, damping, *_ = ROM.ModalParamDyn(model_cross, tracked_idx=(0,1,2), track_using=None)
-plotter.plot_modal_data_single(f,damping,model_cross, suptitle='Modal data for cross-validation model')
+f, damping,eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model_maxime, tracked_idx=(0,1,2), track_using=None)
+Vq_U = eigvecs_U[:,:model_maxime.Nq, :]
+plotter.plot_modal_data_single(f,damping,model_maxime, suptitle='Modal data for cross-validation model')
+Uc, _ , status = ROM.obj_evaluation(U = model_maxime.U, damping = damping[:,1], return_status=True)
 
 
 
-#%%___________________________________________RESOLUTION TEMPORELLE____________________________________
+plotter.plot_vi_grid(Vq=Vq_U[0,:,:], Nw=model_maxime.Nw, Nalpha=model_maxime.Nalpha, freqs_hz=f[0,:], kind='abs', normalize='l2', sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
 
-algo_name = 'GA'
-data = np.load(f'data/res_{algo_name}.npz')
+plotter.plot_vi_grid_over_U(U=model_maxime.U,
+                            Vq_U=Vq_U,
+                            Nw=model_maxime.Nw,
+                            Nalpha=model_maxime.Nalpha,
+                            f_modes_U=f_modes_U,
+                            normalize = 'l2',
+                            mode_indices=(0,1,2))
+
+
+
+#%% __________________________ULiege wing configuration__________________
+model_liege = ModelParameters(s=1.2, c=0.16, x_ea= c/4, x_cg=0.41*c, m=1.106, EIx=18.19, GJ=21.27, eta_w=0.005, eta_alpha=0.005, model_aero='Theodorsen')
+model_liege.Umax=44.5
+model_liege.Ustep=100
+f, damping,eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model_liege, tracked_idx=(0,1,2), track_using=None)
+Vq_U = eigvecs_U[:,:model_liege.Nq, :]
+Uc, _ , status = ROM.obj_evaluation(U = model_liege.U, damping = damping[:,1], return_status=True)
+plotter.plot_modal_data_single(f,damping,model_liege, Uc = Uc,colors = ['tab:blue','tab:green','tab:orange'], save = True, filename='model_liege_ref') #suptitle='Existing wing model - Frequencies and damping evolution'
+
+plotter.plot_vi_grid(Vq=Vq_U[0,:,:], Nw=model_liege.Nw, Nalpha=model_liege.Nalpha, freqs_hz=f[0,:], kind='abs', normalize='l2', sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
+plotter.plot_vi_grid_over_U(U=model_liege.U,
+                            Vq_U=Vq_U,
+                            Nw=model_liege.Nw,
+                            Nalpha=model_liege.Nalpha,
+                            f_modes_U=f_modes_U,
+                            normalize = 'l2',
+                            mode_indices=(0,1,2))
+#%%___________________________________________OPTIMAL WING____________________________________
+
+algorithm_name = "DE"
+target_mode_idx=1
+save = True
+
+data = np.load(f'data/res_target_{target_mode_idx}_'+algorithm_name+'.npz')
 X_opt = map_to_physical(data['resX'])
-x_ea = X_opt[0]*c
-# x_ea = 0.075
-x_cg = X_opt[1]*c
-# x_cg = 0.075
-EIx = X_opt[2]
-GJ = X_opt[3]
-x_ea = 0.05
-x_cg = 0.12
-EIx = 447
-GJ = 41
-model_opt = ModelParameters(s=s, c=c, x_ea=x_ea, x_cg=x_cg, m=m, EIx=EIx, GJ=GJ, eta_w=eta_w, eta_alpha=eta_alpha,model_aero='Theodorsen')
-model_opt.Umax = 25
+s, c = 2.0, 0.2
+m = 2.4
+eta_w = 0.005
+eta_alpha = 0.005
+XX = [X_opt[0]*c,X_opt[1]*c,X_opt[2],X_opt[3]]
+# x_ea = 0.05
+# x_cg = 0.12
+# EIx = 447
+# GJ = 41
+x_ea = XX[0]
+x_cg = XX[1]
+EIx = XX[2]
+GJ = XX[3]
+# x_cg=0.12
+# EIx=300
+model = ModelParameters(s, c, x_ea=x_ea, x_cg=x_cg, m=m, EIx=EIx, GJ=GJ, eta_w=eta_w, eta_alpha=eta_alpha,model_aero= 'Theodorsen')
+model.airfoil.plot_naca00xx_section(save= True, filename=f'model_opt_naca00{int(model.airfoil.t_c*100)}_section_{target_mode_idx}')
 
-model_opt.airfoil.plot_naca00xx_section()
+f0, zeta0, eigvals0, eigvecs0, w_modes, alpha_modes, energy_dict = ROM.ModalParamAtRest(model) # normalize = 'per_field' or 'per_mode'
+Vq = eigvecs0[:model.Nq, :]
 
-f0, zeta0, eigvals0, eigvecs0, w_modes, alpha_modes, energy_dict = ROM.ModalParamAtRest(model_opt) # normalize = 'per_field' or 'per_mode'
-Vq = eigvecs0[:model_opt.Nq, :]
+phase0 = ROM._rel_phase_from_eigvec(model, Vq[:,0])
+phase1 = ROM._rel_phase_from_eigvec(model, Vq[:,1])
+phase2 = ROM._rel_phase_from_eigvec(model, Vq[:,2])
+print(f'Phase à U = 0 > mode 0 : {phase0:.4f} rad, mode 1 : {phase1:.4f} rad, mode 2 : {phase2:.4f} rad')
 
-plotter.plot_vi_grid(Vq=Vq, Nw=model_opt.Nw, Nalpha=model_opt.Nalpha, freqs_hz=f0, kind='abs', normalize='l2', sharey=True, suptitle='Modal coefficients per mode')
-# plotter.plot_mode_shapes_grid(y=model_opt.y, freqs_hz=f0, W=energy_dict['T_ew'], ALPHA=energy_dict['T_ea'], sharey=True, suptitle='Structural mode shape contribution - U=0')
-# plotter.plot_mode_shapes_grid(y=model_opt.y, freqs_hz=f0, W=energy_dict['U_ew'], ALPHA=energy_dict['U_ea'], sharey=True, suptitle='Structural mode shape contribution - U=0')
-# plotter.plot_mode_shapes_grid(y=model_opt.y, freqs_hz=f0, W=w_modes, ALPHA=alpha_modes, sharey=True, suptitle='Structural mode shape contribution - U=0')
+model.Umax = 25
+model.Ustep = 100
+
+f, damping, eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model, tracked_idx=(0,1,2))
+Vq_U = eigvecs_U[:,:model.Nq, :]
+Uc, _ , status = ROM.obj_evaluation(U = model.U, damping = damping[:,target_mode_idx], return_status=True)
+# plotter.plot_modal_data_single(f, damping, model, suptitle=fr"$EI_x$ = {model.EIx:.1f}, $GJ$ = {model.GJ:.1f}, $x_{{ea}}$ = {model.airfoil.x_ea:.3f}, $x_{{cg}}$ = {model.airfoil.x_cg:.3f}, $U_c$ = {Uc:.1f}",
+#                                save = save, filename = f'modal_data_{target_mode_idx}')
+plotter.plot_modal_data_single(f, damping, model, Uc = Uc,
+                               save = save, filename = f'modal_data_{target_mode_idx}')
+
+mask = (model.U >= Uc-5) & (model.U <= Uc+5)
+phase_w_a_U_0 = ROM._rel_phase_from_eigvecs_over_U(model, Vq_U, target_mode_idx=0)
+phase_w_a_U_1 = ROM._rel_phase_from_eigvecs_over_U(model, Vq_U, target_mode_idx=1)
+plotter.plot_vi_wa_phase_over_U(model, model.U[mask], [phase_w_a_U_0[mask], phase_w_a_U_1[mask]], idx_modes=[0, 1],
+                                save = save, filename = f'phase_w_a_over_U_{target_mode_idx}')
+plotter.plot_vi_contribution_over_U(U = model.U,Vq_U = Vq_U, Nw=model.Nw, Nalpha=model.Nalpha,mode_index=0,
+                                    save = save, filename = f'vi_contribution_over_U_{0}')
+
+plotter.plot_vi_grid(Vq=Vq, Nw=model.Nw, Nalpha=model.Nalpha, freqs_hz=f0, kind='abs', normalize='l2', sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
+plotter.plot_vi_grid_over_U(U=model.U,
+                            Vq_U=Vq_U,
+                            Nw=model.Nw,
+                            Nalpha=model.Nalpha,
+                            f_modes_U=f_modes_U,
+                            normalize = 'l2',
+                            mode_indices=(0,1,2),
+                            save = save, filename = f'vi_grid_over_U_{target_mode_idx}')
+
+# idx_U = np.where(model.U==Uc)[0][0]
+# phase0_U = ROM._rel_phase_from_eigvec(model, Vq_U[idx_U,:,0])
+# phase1_U = ROM._rel_phase_from_eigvec(model, Vq_U[idx_U,:,1])
+# phase2_U = ROM._rel_phase_from_eigvec(model, Vq_U[idx_U,:,2])
+# print(f'Phase à U = {model.U[idx_U]:.1f} m/s > mode 0 : {phase0_U:.4f} rad, mode 1 : {phase1_U:.4f} rad, mode 2 : {phase2_U:.4f} rad')
+
+# phi1 = np.angle(Vq_U[idx_U,0,1])
+# phi2 = np.angle(Vq_U[idx_U,3,1])
+# dphi = phi2 - phi1
 
 
 
 
-#%% 
-# model_opt.airfoil.x_ea += 0.02
-# model_opt.airfoil.x_cg += 0.02
 
-f, damping, eigvecs_U, f_modes_U, w_modes_U, alpha_modes_U, energy_dict_U = ROM.ModalParamDyn(model_opt,tracked_idx=(0,1,2,3))
-Vq_U = eigvecs_U[:,:model_opt.Nq, :]
-plotter.plot_modal_data_single(f,damping,model_opt, suptitle='Modal data for optimized model')
-
-Uc, *_ = ROM.obj_evaluation(U = model_opt.U, damping = damping[:,1])
-#%%
-# %matplotlib widget
+#%% ___________Temporal simulation and Work over the span______________________
+# model = model_maxime
 t0 = 0
-tf = 10
+tf = 2
 dt = 0.001
 t = np.arange(t0, tf+dt, dt)
 
 X0 = ROM.build_state_q_from_real(
-    par=model_opt,
+    par=model,
     w_tip=0.01,        # m
     alpha_tip=0.01,     # rad
     wdot_tip=0.0,
     alphadot_tip=0.0
-) # même si on veut simuler une réponse temporelle avec un U!=0 faut mettre un petit w0 ou aplha0 sinon tous les efforts symétriques s'annulent
+) # même si on veut simuler une réponse temporelle avec un U!=0 faut mettre un petit w0 ou aplha0 sinon tous les efforts symétriques s'annulent parfaitement
 
 '''
 thanks to range kutta we get the temporal solutions of a initial state X0 and a freestream speed U
@@ -124,30 +213,169 @@ then we plot w(y,t) alpha(y,t)
 then we plot w(y=s,t) alpha(y=s,t) + FFT
 '''
 
-U=0
-t,X,A = ROM.integrate_state_rk(par = model_opt, U = U , t=t, x0 = X0, rk_order=4)
+f, damping, eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model, tracked_idx= (0,1,2,3,4,5))
+coupled_mode_idx = np.array([0,1])
 
-ROM.plot_w_alpha_fields(par = model_opt, t=t, X=X,U=U,times_to_plot = np.linspace(t[0],t[-1],10))
-ROM.plot_tip_time_and_fft(par = model_opt, t=t,X=X, U=U, detrend=True)
+U = 26
+# we get the freq at U
+idx = np.where(model.U >= U)[0][0]
+f_at_U = f[idx,:]
+omega_ref = 2*np.pi*(f_at_U[coupled_mode_idx[0]]+f_at_U[coupled_mode_idx[1]])*0.5
 
-plotter.plot_vi_grid_over_U(U=model_opt.U,
-                            Vq_U=Vq_U,
-                            Nw=model_opt.Nw,
-                            Nalpha=model_opt.Nalpha,
-                            f_modes_U=f_modes_U,
-                            normalize = 'l2',
-                            mode_indices=(0,1,2))
+t,X,A = ROM.integrate_state_rk(par = model, U = U , t=t, x0 = X0, rk_order=4)
+# ROM.plot_tip_time_and_fft(par = model, t=t,X=X, U=U, detrend=True)
 
-plotter.plot_mode_shapes_grid_over_U(y=model_opt.y,U=model_opt.U,
-                                    # WU=w_modes_U, # shape (nU, n_modes, Ny), déjà normalisé si souhaité
-                                    WU = energy_dict_U['T_ew_U'],
-                                    # ALPHAU=alpha_modes_U, # idem
-                                    ALPHAU = energy_dict_U['T_ea_U'],
-                                    f_modes_U=f_modes_U,
-                                    mode_indices=[0,1,2,3,4,5], # modes #2 et #3 (1- ou 0-based accepté)
-                                    n_samples=10,
-                                    sharey=True, 
-                                    suptitle='Aeroelastic mode shapes across U')
+
+
+# we got back to physical space for plotting
+'''
+q and qdot obtained from X
+then w(y,t) and alpha(y,t) from q(t) and qdot(t)
+qddot(t) from A @ X.T
+then Q_aero(y,t) from q(t), qdot(t) and qddot(t)
+'''
+q = X[:, :model.Nq]
+qdot = X[:,model.Nq:]
+qdot_w = X[:,model.Nq:model.Nq+model.Nw]
+qdot_a = X[:,model.Nq+model.Nw:model.Nq+model.Nw+model.Nalpha]
+qddot = (A @ X.T).T[:,model.Nq:model.Nq+model.Nw+model.Nalpha]
+
+wdot_map, alphadot_map, Phi_w, Phi_a = ROM._modal_to_physical_fields(model, qdot_w, qdot_a, return_shapes=True)
+Ka, Ca, Ma = ROM.TheodoresenAeroModel(par=model, U=U, omega=omega_ref)
+
+Q_aero = -(Ma @ qddot.T + Ca @ qdot.T + Ka @ q.T).T # aero forces in q space
+
+f_w = Q_aero[:, :model.Nw] @ Phi_w # bending forces along the span : f_w(y) = Σ_i Q_aero_w[i] * phi_w_i(y)
+m_a = Q_aero[:, model.Nw:model.Nw+model.Nalpha] @ Phi_a  # torsional forces along the span
+p_w = f_w * wdot_map  # power from bending forces : p_w(y,t) = f_w(y,t) * wdot(y,t)
+p_a = m_a * alphadot_map  # power from torsional forces : p_a(y,t) = m_a(y,t) * alphadot(y,t)
+p = p_w + p_a
+
+fig, ax = plt.subplots(constrained_layout=True)
+ax.plot(t, p_w[:,-1], lw=1,label='bending contribution')
+ax.plot(t, p_a[:,-1], lw=1,label='torsion contribution')
+ax.plot(t, p[:,-1], lw=1,label='total')
+ax.legend()
+ax.set_title(f'Power at wingtip at U={U} m/s, all modes considered')
+plt.show()
+# we calcule the energy over a period :
+W_w = np.zeros(model.y.shape)
+W_a = np.zeros(model.y.shape)
+W = np.zeros(model.y.shape)
+T_period = 1/ (omega_ref/(2*np.pi))
+t0=0.5 # to avoid initial transient
+for i in range(len(model.y)):
+    yi = model.y[i]
+    p_a_yi = p_a[:,i]
+    p_w_yi = p_w[:,i]
+    p_yi = p[:,i]
+    # we integrate over a period
+    mask_time = (t >= t0) & (t <= t0 + T_period)
+    W_w[i] = np.trapezoid(p_w_yi[mask_time], t[mask_time])
+    W_a[i] = np.trapezoid(p_a_yi[mask_time], t[mask_time])
+    W[i] = np.trapezoid(p_yi[mask_time], t[mask_time])
+
+fig, ax = plt.subplots(constrained_layout=True)
+ax.plot(W_w, model.y, lw=1, label='bending contribution')
+ax.plot(W_a, model.y, lw=1, label='torsion contribution')
+ax.plot(W, model.y, lw=1, label='total')
+ax.legend()
+ax.vlines(0, ymin=0, ymax=model.s, colors='k', linestyles='--', lw=0.8)
+
+ax.set_xlim((-max(np.abs(W)*1.1),max(np.abs(W)*1.1)))
+ax.set_xlabel('Forces work on a period [J]')
+ax.set_ylabel('Spanwise location y [m]')
+ax.set_title(f'Energy distribution along the span at U = {U} m/s')
+ax.grid(True, linewidth=0.3, alpha=0.5)
+
+'''
+the energy (positive or negative) is mostly echanged at the tip bc of the larger amplitudes of the DOFs there.
+even for the unstable set of parameters, the energy is <0, because of the stable mode that dissipate energy more than
+the unstable mode steals energy. The forces actings on stable mode are larger than those on unstable mode.
+
+we must look mode per mode to see > and < 0 regions
+
+'''
+#%% same but mode per mode
+k=0
+W_tot = np.zeros(model.y.shape)
+# for k in [0,1,2,3,4,5]:
+idx_U=-1
+v_k = eigvecs_U[idx_U,:model.Nq, k]
+eta = np.linalg.pinv(eigvecs_U[idx_U,:model.Nq,:]) @ q.T # eta = V^-1 @ q (enfin c'est qu'une partie de eigvecs_U, la supérieure))
+# eta de taille nmodes x ntimes, on prend la k-ieme ligne pour avoir eta_k(t)
+eta_dot = np.linalg.pinv(eigvecs_U[idx_U,:model.Nq,:]) @ qdot.T
+eta_ddot = np.linalg.pinv(eigvecs_U[idx_U,:model.Nq,:]) @ qddot.T
+
+
+q_k = np.outer(eta[k,:], v_k).real #equivalent to et .* on matlab
+qdot_k  = np.outer(eta_dot[k,:],  v_k).real
+qddot_k = np.outer(eta_ddot[k,:], v_k).real
+
+q_k_w = q_k[:, :model.Nw]
+q_k_a = q_k[:, model.Nw:model.Nw+model.Nalpha]
+qdot_k_w = qdot_k[:, :model.Nw]
+qdot_k_a = qdot_k[:, model.Nw:model.Nw+model.Nw+model.Nalpha]
+qddot_k_w = qddot_k[:, :model.Nw]
+qddot_k_a = qddot_k[:, model.Nw:model.Nw+model.Nw+model.Nalpha]
+
+Q_aero_k = -(Ma @ qddot_k.T + Ca @ qdot_k.T + Ka @ q_k.T).T  # (nt, Nq), on est encore en coordonnées de Ritz
+f_w_k = Q_aero_k[:, :model.Nw] @ Phi_w #on repasse en espace physique
+m_a_k = Q_aero_k[:, model.Nw:model.Nw+model.Nalpha] @ Phi_a
+
+wdot_map, alphadot_map, _ , _ = ROM._modal_to_physical_fields(model, qdot_k_w, qdot_k_a, return_shapes=True)
+p_k_w = f_w_k* wdot_map
+p_k_a = + m_a_k * alphadot_map
+p_k = p_k_w + p_k_a
+fig, ax = plt.subplots(constrained_layout=True)
+ax.plot(t, p_k_w[:,-1], lw=1,label='bending contribution')
+ax.plot(t, p_k_a[:,-1], lw=1,label='torsion contribution')
+ax.plot(t, p_k[:,-1], lw=1,label='total')
+ax.legend()
+ax.set_title(f'Power at wingtip for mode {k} at U={U} m/s')
+plt.show()
+
+W_w = np.zeros(model.y.shape)
+W_a = np.zeros(model.y.shape)
+W = np.zeros(model.y.shape)
+
+T_period = 1/ (omega_ref/(2*np.pi))
+t0=0.5 # to avoid initial transient
+for i in range(len(model.y)):
+    yi = model.y[i]
+    p_w_k_yi = p_k_w[:,i]
+    p_a_k_yi = p_k_a[:,i]
+    p_yi = p_k[:,i]
+    # we integrate over a period
+    mask_time = (t >= t0) & (t <= t0 + T_period)
+    W_w[i] = np.trapezoid(p_w_k_yi[mask_time], t[mask_time])
+    W_a[i] = np.trapezoid(p_a_k_yi[mask_time], t[mask_time])
+    W[i] = np.trapezoid(p_yi[mask_time], t[mask_time])
+# W_tot[i] += W[i]
+
+fig, ax = plt.subplots(constrained_layout=True)
+ax.plot(W_w, model.y, lw=1, label='bending contribution')
+ax.plot(W_a, model.y, lw=1, label='torsion contribution')
+ax.plot(W, model.y, lw=1, label='total')
+ax.vlines(0, ymin=0, ymax=model.s, colors='k', linestyles='--', lw=0.8)
+
+ax.set_xlim((-max(np.abs(W)*1.1),max(np.abs(W)*1.1)))
+ax.set_xlabel('Forces work on a period [J]')
+ax.set_ylabel('Spanwise location y [m]')
+ax.set_title(f'Energy distribution along the span at U = {U} m/s' + f' for mode {k}')
+ax.legend()
+ax.grid(True, linewidth=0.3, alpha=0.5)
+
+# fig, ax = plt.subplots(constrained_layout=True)
+# ax.plot(W_tot, model.y, lw=1, label='total')
+# ax.vlines(0, ymin=0, ymax=model.s, colors='k', linestyles='--', lw=0.8)
+
+# ax.set_xlim((-max(np.abs(W_tot)*1.1),max(np.abs(W)*1.1)))
+# ax.set_xlabel('Forces work on a period [J]')
+# ax.set_ylabel('Spanwise location y [m]')
+# ax.set_title(f'Energy distribution along the span at U = {U} m/s' + f' sum modes')
+# ax.grid(True, linewidth=0.3, alpha=0.5)
+
 
 #%%______________plot animation
 

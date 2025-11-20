@@ -44,9 +44,9 @@ class ModelParameters:
 
         # Geometric parameters
         self._s = s                              # Half-span 
-
         self.airfoil = NACA(c=c,t_c=0.15,m=m,x_ea=x_ea,x_cg=x_cg)
-             # Non-dimensional ea location
+        
+        self.AR = self.s/self.airfoil.c   # Aspect ratio
 
         # Structural parameters
         self.EIx = EIx                          # Bending stiffness 
@@ -83,9 +83,10 @@ class ModelParameters:
         '''
         the slope of aero coeff should be attribut of NACA ? actually nop if it's 3D coeff
         '''
-        self.dCn = 4                          # Normal force coefficient, normalement c'est 2pi pour une aile infinie, pour une aile finie on la correction a0 / (1 + a0/(π e AR))
-        self.dCm = 0.5                         # Moment coefficient
-        # actually the dCm shoudn't be constant, in the stall region the curve is not linear anymore
+        tau = 0.875
+        self.dCL = self.airfoil.a0/(1+(self.airfoil.a0/(np.pi*self.AR))*(1+tau))   # Normal force coefficient, normalement c'est 2pi pour une aile infinie, pour une aile finie on la correction a0 / (1 + a0/(π e AR))
+        self.dCM = (self.airfoil.x_ea-self.airfoil.x_ac)/self.airfoil.c*self.dCL    # Moment coefficient, /!\ x_ea-x_ac > 0 iff x_ea is behind x_ac, NOT ALWAYS TRUE dependidng on the intervals' boundaries chosen for x_ea
+        # actually the dCm shoudn't be computed by the same formula in the stall region the curve is not linear anymore AND dCm depends on x_ea relative to x_ac!!!
 
         self._Umax = 30                          # Maximum velocity of the IAT wind tunnel
         self._Ustep = 60                        # Number of velocity steps
@@ -205,6 +206,16 @@ class ModelParameters:
     def Ustep(self, value: int) -> None:
         self._Ustep = int(value)
         self._recompute_U()
+
+    # --- parameters that are not directly in the ModelParameters class
+    @property
+    def x_ea(self) -> float:
+        return self.airfoil.x_ea
+
+    @x_ea.setter
+    def x_ea(self, value: float) -> None:
+        self.airfoil.x_ea = float(value)
+        self.dCM = (self.airfoil.x_ea-self.airfoil.x_ac)/self.airfoil.c*self.dCL   # Update dCM when x_ea changes
 
 
     '''

@@ -42,7 +42,7 @@ def cost(X,target_mode_idx):
         extrapolated if it doesnt cross but a negative slope exists, or arbitrary high if no crossing and no negative slope)
     '''
     model = ModelParameters(s=2, c=0.2, x_ea=X[0]*0.2, x_cg=X[1]*0.2, m=2.4, EIx=X[2], GJ=X[3],model_aero='Theodorsen')
-    model.Umax = 40
+    model.Umax = 50
     model.Ustep = 80
     # we rebuild the model with the new physical parameters X each time (a bit long but ok for now)
 

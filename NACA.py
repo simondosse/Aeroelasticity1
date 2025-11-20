@@ -1,6 +1,7 @@
 #%%
 import numpy as np
 from typing import Optional
+import os
 
 '''
 Dataclass previously used to return results has been removed as requested.
@@ -11,6 +12,8 @@ All computed properties now live as attributes on the NACA object itself.
 class NACA:
     """
     This object is used to described the section used for the airfoil, it manages the 2D airfoil properties
+
+    some of its attributes are usually used in the ModelParameters class to compute 3D wing properties (like dCL for example)
     """
 
     def __init__(self, c: float, x_ea, x_cg, m, t_c: float = 0.15):
@@ -20,17 +23,20 @@ class NACA:
         self.b = self.c/2            # semi-chord length
         self.t_c = float(t_c)        # thickness-to-chord ratio (e.g. 0.15 for NACA0015)
 
+
+
         '''
         I put "_" before the attributs name just to say they have a @property @setter
         '''
-
-        # Additional attributes requested
+        # geometric inputs
+        self.x_ac = 0.21*self.c  # aerodynamic center x-position [m]
         self._x_ea = float(x_ea)  # elastic axis x-position [m]
-
-        # Use internal storage for x_cg to allow a property with recompute side-effects
         self._x_cg = float(x_cg)  # centroid x-position [m]
         self.x_alpha = self._x_cg-self._x_ea # J'AURAIS PU DEJA ECRIRE self.x_alpha = self.x_cg - self.x_ea car j'ai les @property plus bas 
         self.a = (self._x_ea / self.b) - 1  
+        self.a0 = 1.8*np.pi  # lift curve slope for a thin airfoil NACA0015 profile (2D)
+
+
         # Mass properties inputs
         self._m = float(m)          # linear mass [kg/m]
 
@@ -148,6 +154,7 @@ class NACA:
     def x_ea(self, value: float) -> None:
         # Update CG and recompute inertias that depend on it
         self._x_ea = float(value)
+        
         self.x_alpha = self._x_cg-self._x_ea
         self.inertia_mass_naca0015()
 
@@ -172,6 +179,8 @@ class NACA:
         show: bool = True,
         annotate: bool = True,
         fill: bool = True,
+        save = False,
+        filename: str = f'naca00xx_section'
     ):
         """
         Plot a symmetric NACA 00xx airfoil section and mark the center of gravity.
@@ -245,6 +254,9 @@ class NACA:
         ax.set_aspect('equal', adjustable='box')
         ax.grid(True, linewidth=0.3, alpha=0.5)
         # ax.legend(frameon=False, loc='best')
+        if save:
+            os.makedirs('images', exist_ok=True)
+            fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
 
 
         plt.show()

@@ -1,18 +1,34 @@
 #%%
+from cProfile import label
 import os
+from re import L
 import numpy as np
+
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 from matplotlib import animation
 
 from data_manager import _load_npz
 from typing import Tuple, Optional 
 import ROM
 
+mpl.rcParams.update({
+"text.usetex": True,
+"font.family": "serif",
+"font.serif": ["Computer Modern Roman"],
+})
+
+figsize = (5.5,4)  # Taille des figures (format article)
+
 def plot_modal_data_single(f,
                            damping,
                            par=None,
                            U: Optional[np.ndarray] = None,
-                           suptitle: Optional[str] = None):
+                           suptitle: Optional[str] = None,
+                           Uc: Optional[float] = None,
+                           colors: Optional[list] = None,
+                           save: bool = False,
+                           filename: str = 'modal_data'):
     """
     Trace un seul jeu de données (fréquences et amortissements) à partir des tableaux passés.
 
@@ -54,29 +70,54 @@ def plot_modal_data_single(f,
         base_colors = plt.rcParams['axes.prop_cycle'].by_key().get('color', [])
     except Exception:
         base_colors = []
-    colors = base_colors[:n_modes] if len(base_colors) >= n_modes else [f"C{i}" for i in range(n_modes)]
-    mode_labels = [f"Mode {j+1}" for j in range(n_modes)]
+
+    if colors:
+        colors = colors
+    else:
+        colors = base_colors[:n_modes] if len(base_colors) >= n_modes else [f"C{i}" for i in range(n_modes)]
+    mode_labels = [fr"$\psi^{{{j+1}}}$" for j in range(n_modes)]
 
     # Figure
-    fig, ax = plt.subplots(2, 1, sharex=True, constrained_layout=True)
-    title = suptitle if suptitle is not None else model_name
-    fig.suptitle(title)
+    fig, ax = plt.subplots(2, 1, sharex=True, constrained_layout=True, figsize=figsize)
+    if suptitle is not None:
+        fig.suptitle(suptitle)
 
     # Fréquences
     for j in range(n_modes):
         if not np.all(np.isnan(f[:, j])):
             ax[0].plot(U, f[:, j], color=colors[j], linestyle=linestyle, lw=1.2)
-    ax[0].set_ylabel('f [Hz]')
+    ax[0].set_ylabel('$f$ [Hz]')
     ax[0].grid(True, linewidth=0.3, alpha=0.5)
 
     # Amortissement + légende
     for j in range(n_modes):
         ax[1].plot(U, z[:, j], color=colors[j], linestyle=linestyle, lw=1.2, label=mode_labels[j])
 
-    ax[1].set_xlabel('U [m/s]')
-    ax[1].set_ylabel('zeta [-]')
+    ax[1].set_xlabel(r'$U$ [$m/s$]')
+    ax[1].set_ylabel(r'$\zeta$')
     ax[1].grid(True, linewidth=0.3, alpha=0.5)
     ax[1].legend(frameon=False, ncols=min(4, n_modes))
+
+    if Uc is not None:
+        for a in ax:
+            a.axvline(Uc, color='k', lw=1.1, ls=':', alpha=0.7)
+            ymax = ax[0].get_ylim()[1]
+
+        x_offset = 0.02  # décale de 2% de la largeur du graphe
+        xmin, xmax = ax[0].get_xlim()
+        dx = x_offset * (xmax - xmin)
+        ax[0].text(
+            Uc+dx, ymax*0.90,              # position du texte
+            r"$U_c$",                   # texte LaTeX
+            ha='center', va='top',
+            fontsize=9
+        )
+
+
+
+    if save:
+        os.makedirs('images', exist_ok=True)
+        fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
     plt.show()
 
 def plot_modal_data_two(fa,
@@ -86,7 +127,9 @@ def plot_modal_data_two(fa,
                         par_a=None,
                         par_b=None,
                         U: Optional[np.ndarray] = None,
-                        labels: Optional[Tuple[str, str]] = None):
+                        labels: Optional[Tuple[str, str]] = None,
+                        save: bool = False,
+                        filename: str = 'modal_comparison'):
     """
     Superpose deux simulations (fa, za) et (fb, zb).
 
@@ -165,9 +208,12 @@ def plot_modal_data_two(fa,
     ax[1].grid(True, linewidth=0.3, alpha=0.5)
     ax[1].legend(frameon=False, ncols=2)
 
+    if save:
+        os.makedirs('images', exist_ok=True)
+        fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
     plt.show()
 
-def plot_params_table(par):
+def plot_params_table(par, save: bool = False, filename: str = 'param_table'):
     # Construire un dict lisible des principaux paramètres
     items = [
         ("model_aero", par.model_aero),
@@ -210,6 +256,9 @@ def plot_params_table(par):
     ax.set_title("Model Parameters", fontsize=11, pad=10)
 
     plt.tight_layout()
+    if save:
+        os.makedirs('images', exist_ok=True)
+        fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
     plt.show()
 
 def plot_vi(vi: np.ndarray,
@@ -222,7 +271,9 @@ def plot_vi(vi: np.ndarray,
             figsize: Tuple[int, int] = (9, 4),
             bending_label: str = 'vw (bending)',
             torsion_label: str = 'va (torsion)',
-            ax: Optional[plt.Axes] = None   # NEW: draw into an existing axis
+            ax: Optional[plt.Axes] = None,  # NEW: draw into an existing axis
+            save: bool = False,
+            filename: str = 'vi'
 ):
     vi = np.asarray(vi).reshape(-1)
     assert vi.size == Nw + Nalpha, "vi must have length Nw+Nalpha"
@@ -256,15 +307,18 @@ def plot_vi(vi: np.ndarray,
         ax_mag.bar(np.arange(Nw), np.abs(vw), color='#4C78A8', label=bending_label)
         ax_mag.bar(Nw + np.arange(Nalpha), np.abs(va), color='#F58518', label=torsion_label)
         ax_mag.set_xticks(np.arange(Nw + Nalpha))
-        ax_mag.set_xticklabels([f"w{k+1}" for k in range(Nw)] + [f"α{k+1}" for k in range(Nalpha)])
+        ax_mag.set_xticklabels([rf"$\phi_{{w,{k+1}}}$" for k in range(Nw)] + [rf"$\phi_{{\alpha,{k+1}}}$" for k in range(Nalpha)])
         ax_mag.set_ylabel("|coeff|"); ax_mag.legend(); ax_mag.set_title("Modal coefficients magnitude")
 
         phase = np.angle(np.concatenate([vw, va]))
         ax_phi.plot(np.arange(Nw + Nalpha), phase, 'o-', color='#6F4E7C')
         ax_phi.axhline(0.0, color='k', lw=0.8, alpha=0.5)
         ax_phi.set_xticks(np.arange(Nw + Nalpha))
-        ax_phi.set_xticklabels([f"w{k+1}" for k in range(Nw)] + [f"α{k+1}" for k in range(Nalpha)])
+        ax_phi.set_xticklabels([fr"$\phi_{{w,{k+1}}}$" for k in range(Nw)] + [rf"$\phi_{{\alpha,{k+1}}}$" for k in range(Nalpha)])
         ax_phi.set_ylabel("phase [rad]"); ax_phi.set_title("Modal coefficients phase")
+        if save:
+            os.makedirs('images', exist_ok=True)
+            fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
         return fig, axes
 
     # Single-axis variants
@@ -279,7 +333,7 @@ def plot_vi(vi: np.ndarray,
     if kind == 'abs':
         ax.bar(idx_w, np.abs(vw), color='#4C78A8', label=bending_label)
         ax.bar(idx_a, np.abs(va), color='#F58518', label=torsion_label)
-        ax.set_ylabel("|coeff|")
+        ax.set_ylabel("$\psi^i$ component magnitude")
         ax.set_title("Modal coefficients (magnitude)")
     elif kind == 'real_imag':
         width = 0.38
@@ -294,13 +348,24 @@ def plot_vi(vi: np.ndarray,
         raise ValueError("kind must be 'abs', 'real_imag', or 'mag_phase'")
 
     ax.set_xticks(np.arange(Nw + Nalpha))
-    ax.set_xticklabels([f"w{k+1}" for k in range(Nw)] + [f"α{k+1}" for k in range(Nalpha)])
+    ax.set_xticklabels([fr"$\psi_{{w,{k+1}}}$" for k in range(Nw)] + [rf"$\psi_{{\alpha,{k+1}}}$" for k in range(Nalpha)])
     ax.grid(True, linewidth=0.3, alpha=0.5)
 
     if created_fig:
         ax.legend()
+        # if save:
+        #     os.makedirs('images', exist_ok=True)
+        #     fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
         return fig, ax
     else:
+        # if save:
+        #     # save the parent figure of the provided axis
+        #     try:
+        #         fig_to_save = ax.figure
+        #         os.makedirs('images', exist_ok=True)
+        #         fig_to_save.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
+        #     except Exception:
+        #         pass
         return ax
 
 def plot_vi_grid(Vq: np.ndarray, Nw: int, Nalpha: int,
@@ -313,8 +378,10 @@ def plot_vi_grid(Vq: np.ndarray, Nw: int, Nalpha: int,
                  figsize: Optional[Tuple[float, float]] = None,
                  suptitle: Optional[str] = None,
                  show: bool = True,
-                 bending_label: str = 'vw (bending)',
-                 torsion_label: str = 'va (torsion)',
+                 save: bool = False,
+                 filename: str = 'vi_grid',
+                 bending_label: str = r'$\psi_w$',
+                 torsion_label: str = r'$\psi_\alpha$',
 ):
     Vq = np.asarray(Vq)
     assert Vq.shape[0] == Nw + Nalpha, "Vq must have Nw+Nalpha rows"
@@ -346,7 +413,7 @@ def plot_vi_grid(Vq: np.ndarray, Nw: int, Nalpha: int,
             torsion_label=torsion_label,
             ax=ax,  # reuse single-axis variant
         )
-        title = f"Mode {jm+1}"
+        title = f"Mode {jm+1} : $\psi^{{{jm+1}}}$"
         if freqs_hz is not None:
             title += f" (f={float(freqs_hz[jm]):.2f} Hz)"
         ax.set_title(title)
@@ -357,6 +424,9 @@ def plot_vi_grid(Vq: np.ndarray, Nw: int, Nalpha: int,
     if suptitle:
         fig.suptitle(suptitle, y=1.02)
     plt.tight_layout()
+    if save:
+        os.makedirs('images', exist_ok=True)
+        fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
     if show:
         plt.show()
     return fig, axes
@@ -370,6 +440,7 @@ def plot_vi_grid_over_U(U: np.ndarray,Vq_U: np.ndarray,
                         f_modes_U= None,
                         sharey=True,
                         figsize = None,suptitle= None,show=True,
+                        save: bool = False, filename: str = 'vi_grid_over_U',
                         bending_label = 'vw (bending)',
                         torsion_label = 'va (torsion)',
 ):
@@ -465,11 +536,151 @@ def plot_vi_grid_over_U(U: np.ndarray,Vq_U: np.ndarray,
     if suptitle:
         fig.suptitle(suptitle)
 
+    if save:
+        os.makedirs('images', exist_ok=True)
+        fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
     if show:
         plt.show()
     return fig, axes
 
-def plot_mode_shapes_grid(y, freqs_hz, W=None, ALPHA=None,extras=None,normalize=False,colors=None,styles=None,sharey=True,figsize=None,suptitle=None,show=True):
+def plot_vi_contribution_over_U(U: np.ndarray,
+                                Vq_U: np.ndarray,
+                                Nw: int,
+                                Nalpha: int,
+                                mode_index: int = 0,
+                                norm: str = None,   # 'l2' or 'max'
+                                figsize: Tuple[float, float] = (6, 4),
+                                suptitle: Optional[str] = None,
+                                show: bool = True,
+                                save: bool = False,
+                                filename: str = 'nonfichier'):
+    """
+    Trace l'évolution, pour un mode donné, du rapport |vw|/|va| en fonction de U.
+
+    Entrées
+    - U: vecteur des vitesses (nU,)
+    - Vq_U: tenseur (nU, Nq, n_modes) ou (nU, 2*Nq, n_modes) contenant les vecteurs propres
+            (format compatible avec `plot_vi_grid_over_U`).
+    - Nw, Nalpha: tailles des sous-vecteurs vw et va (Nq = Nw+Nalpha)
+    - mode_index: index du mode (0-based)
+    - norm: méthode pour réduire un vecteur à un scalaire ('l2' pour norme L2, 'max' pour max(|.|)).
+    - show/save/filename: comportement d'affichage et sauvegarde (PDF dans `images/`).
+
+    Retour
+    - fig, ax
+    """
+    U = np.asarray(U).ravel()
+    if U.ndim != 1 or U.size == 0:
+        raise ValueError("U must be a 1D array with at least one element")
+
+    Vq_U = np.asarray(Vq_U)
+    Nq = Nw + Nalpha
+    if Vq_U.ndim != 3:
+        raise ValueError("Vq_U must be 3D with shape (nU, Nq or 2*Nq, n_modes)")
+
+    # Accept either Vq_U shape (nU, Nq, n_modes) or eigvecs_U shape (nU, 2*Nq, n_modes)
+    if Vq_U.shape[1] == Nq:
+        Vq_only = Vq_U
+    elif Vq_U.shape[1] == 2 * Nq:
+        Vq_only = Vq_U[:, :Nq, :]
+    else:
+        raise ValueError("Vq_U second dim must be Nq or 2*Nq")
+
+    nU, _, n_modes_total = Vq_only.shape
+    if nU != U.size:
+        raise ValueError("len(U) must match Vq_U.shape[0]")
+
+    # accept 1-based indices
+    mi = int(mode_index)
+
+
+    # compute ratios
+    ratios = np.zeros(nU, dtype=float)
+    tiny = 1e-12
+    for iu in range(nU):
+        vi = Vq_only[iu, :, mi]
+        vw = vi[:Nw]
+        va = vi[Nw:]
+        if norm == 'max':
+            num = float(np.max(np.abs(vw)))
+            den = float(np.max(np.abs(va)))
+        else:
+            num = float(np.linalg.norm(vw))
+            den = float(np.linalg.norm(va))
+        if den == 0.0:
+            ratios[iu] = np.nan
+        else:
+            ratios[iu] = num / max(den, tiny)
+
+    # Plot
+    fig, ax = plt.subplots(1, 1, figsize=figsize, constrained_layout=True)
+    ax.plot(U, ratios, color='tab:blue')
+    ax.set_xlabel('U [m/s]')
+    ax.set_ylabel(r'$|\mathbf{v}_w| / |\mathbf{v}_a|$')
+    
+    title = r"Relative bending-torsion contribution ($|\mathbf{v}_w|/|\mathbf{v}_a|$)"+f" - Mode {mi+1}"
+    if suptitle:
+        title = suptitle
+    ax.set_title(title)
+    ax.grid(True, linewidth=0.3, alpha=0.5)
+
+    if save:
+        os.makedirs('images', exist_ok=True)
+        fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
+    if show:
+        plt.show()
+    return fig, ax
+
+def plot_vi_wa_phase_over_U(par, U, phase_w_a_list, idx_modes=None, save: bool = False, filename: str = 'phase_w_a_over_U'):
+    '''
+    Trace la phase entre la partie de flexion et de torsion pour un ou plusieurs modes.
+    Paramètres
+    ----------
+    par : objet
+        Contient par.U (vecteur des vitesses).
+    U : array_like
+        Vitesses utilisées pour le tracé (écrase par.U si fourni).
+    phase_w_a_list : list of array_like
+        Liste contenant les vecteurs de phase pour chaque mode.
+    idx_modes : list of int, optional
+        Indices des modes (0-based). Si None, les indices seront [0, 1, 2, ...].
+    '''
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    U = np.asarray(par.U if U is None else U).ravel()
+    n_modes = len(phase_w_a_list)
+    if idx_modes is None:
+        idx_modes = list(range(n_modes))
+
+    fig, ax = plt.subplots(1, 1, figsize=(5.5, 4), constrained_layout=True)
+    fig.suptitle(r'Phase angle $\theta_w$ by which the bending part leads the torsion part')
+
+    # Couleurs par défaut (cyclage)
+    colors = plt.cm.tab10(np.linspace(0, 1, n_modes))
+    if len(phase_w_a_list) == 2:
+        colors = ['tab:blue', 'tab:orange']
+
+    for phase_w_a, mode_idx, color in zip(phase_w_a_list, idx_modes, colors):
+        phase_w_a = np.asarray(phase_w_a).ravel()
+        ax.plot(U, phase_w_a, '-', lw=1.3, color=color, label=rf'Mode {mode_idx+1}')
+
+    ax.set_xlabel('U [m/s]')
+    ax.set_ylabel(r'Phase angle $\theta_w$ [rad]')
+    ax.grid(True, linewidth=0.3, alpha=0.5)
+    ax.set_ylim(-np.pi - 0.2, np.pi + 0.2)
+
+    ax.axhline(y=np.pi/2, linestyle='--', color='k', lw=0.8, alpha=0.5)
+    ax.axhline(y=-np.pi/2, linestyle='--', color='k', lw=0.8, alpha=0.5)
+
+    ax.legend()
+    if save:
+        os.makedirs('images', exist_ok=True)
+        fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
+    plt.show()
+   
+
+def plot_mode_shapes_grid(y, freqs_hz, W=None, ALPHA=None,extras=None,normalize=False,colors=None,styles=None,sharey=True,figsize=None,suptitle=None,show=True, save: bool = False, filename: str = 'nonfichier'):
     '''
     Trace les formes modales par mode, en colonnes :
     | Mode 1 (f=...) | Mode 2 (f=...) | Mode 3 (f=...) | ...
@@ -585,6 +796,9 @@ def plot_mode_shapes_grid(y, freqs_hz, W=None, ALPHA=None,extras=None,normalize=
     if suptitle:
         fig.suptitle(suptitle, y=1.02)
     plt.tight_layout()
+    if save:
+        os.makedirs('images', exist_ok=True)
+        fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
     if show:
         plt.show()
 
@@ -594,7 +808,7 @@ def plot_mode_shapes_grid_over_U(y, U, WU=None, ALPHAU=None, f_modes_U=None,
                                  mode_indices=None, n_samples=10,
                                  colors=None, styles=None,
                                  sharey=True, figsize=None,
-                                 suptitle=None, show=True,):
+                                 suptitle=None, show=True, save: bool = False, filename: str = 'nonfichier'):
     """
     Plot spatial mode shapes (w and alpha) for multiple wind speeds in a grid.
 
@@ -788,6 +1002,9 @@ def plot_mode_shapes_grid_over_U(y, U, WU=None, ALPHAU=None, f_modes_U=None,
     if suptitle:
         fig.suptitle(suptitle, y=1.02)
 
+    if save:
+        os.makedirs('images', exist_ok=True)
+        fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
     if show:
         import matplotlib.pyplot as plt
         plt.show()
@@ -982,3 +1199,13 @@ def animate_beam(par,t,X,U=None,n_stations=15,interval=30,
             ani.save(save_path, writer='ffmpeg', fps=max(1, int(1000 / interval)))
 
     return fig, ani
+
+
+# x = np.linspace(0,2*np.pi,100)
+# y1 = np.cos(x)
+# y2 = np.cos(x+np.pi/2)
+
+# fig, ax = plt.subplots()
+# ax.plot(x, y1, label='cos(x)')
+# ax.plot(x, y2, label='cos(x + π/2)')
+# fig.savefig('images/trig_functions.pdf')

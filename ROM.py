@@ -99,7 +99,18 @@ def _rel_phase_from_eigvec(par, vi):
     va = vi[par.Nw:par.Nq]
     if vw.size == 0 or va.size == 0:
         return 0.0
-    return float(np.angle(np.vdot(va, vw)))
+    return float(np.angle(np.vdot(va, vw))) #la phase d’avance de vw par rapport à va
+
+def _rel_phase_from_eigvecs_over_U(par, Vq_U, target_mode_idx):
+    Nalpha = par.Nalpha
+    Nw = par.Nw
+    U = par.U
+
+    phase_w_a = np.zeros((U.size,1))
+    for i in range(U.size):
+        vi = Vq_U[i, :Nw+Nalpha, target_mode_idx]
+        phase_w_a[i] = _rel_phase_from_eigvec(par = par, vi = vi)
+    return phase_w_a
 
 def _wrap_pi(phi):
     '''
@@ -461,6 +472,8 @@ def _modal_to_physical_fields(par, qw_t, qa_t, return_shapes=False):
     EN TEMPOREL
     w(y,t) = Phiw(y) @ qw(t)
 
+    marche aussi pour remonter au dérivées temporelles supérieures
+    wdot(y,t) = Phiw(y) @ qwdot(t)
     Paramètres
     ----------
     par : ModelParameters
@@ -904,7 +917,7 @@ def QuasiSteadyAeroModel(par,U):
     PARAMETERS
     ---------------
     par : object
-        Wing and aerodynamic parameters (uses `rho_air`, `c`, `dCn`, `dCm`, mode counts).
+        Wing and aerodynamic parameters (uses `rho_air`, `c`, `dCL`, `dCM`, mode counts).
     U : float
         Freestream velocity (m/s).
 
@@ -915,8 +928,8 @@ def QuasiSteadyAeroModel(par,U):
     """
 
     phi_ww, phi_alphaalpha, phi_walpha = modalMatrices(par)
-    Ka = 0.5 * par.rho_air * (U**2) * par.airfoil.c * np.block([[0 * phi_ww , par.dCn * phi_walpha], [0 * phi_walpha.T , - par.airfoil.c * par.dCm * phi_alphaalpha]])
-  
+    Ka = 0.5 * par.rho_air * (U**2) * par.airfoil.c * np.block([[0 * phi_ww , par.dCL * phi_walpha], [0 * phi_walpha.T , - par.airfoil.c * par.dCM * phi_alphaalpha]])
+
     return Ka 
 
 def TheodorsenFunction(k):
@@ -958,7 +971,7 @@ def CooperWrightNotation(par,k):
     PARAMETERS
     ---------------
     par : object
-        Aerodynamic parameters (uses `dCn`, `dCm`, `a`).
+        Aerodynamic parameters (uses `dCl`, `dCm`, `a`).
     k : float
         Reduced frequency (k = ω b / U).
 
@@ -993,29 +1006,34 @@ def CooperWrightNotation(par,k):
     F,G = TheodorsenFunction(k)
 
     L_w_dot_dot = np.pi
-    L_w_dot = par.dCn * F
-    L_w = - par.dCn * k * G
+    L_w_dot = par.dCL * F
+    L_w = - par.dCL * k * G
 
     L_alpha_dot_dot = - np.pi * par.airfoil.a
-    L_alpha_dot = par.dCn * ( F * (1/2 - par.airfoil.a) + (G/k)) + np.pi
-    L_alpha = par.dCn * (F - k * G * (1/2 - par.airfoil.a) )
+    L_alpha_dot = par.dCL * ( F * (1/2 - par.airfoil.a) + (G/k)) + np.pi
+    L_alpha = par.dCL * (F - k * G * (1/2 - par.airfoil.a) )
 
     M_w_dot_dot = np.pi * par.airfoil.a
-    M_w_dot = 2 * par.dCm * F
-    M_w = - 2 * par.dCm * k * G 
+    M_w_dot = 2 * par.dCM * F
+    M_w = - 2 * par.dCM * k * G 
 
     M_alpha_dot_dot = - np.pi * (1/8 + (par.airfoil.a**2))
-    M_alpha_dot = 2 * par.dCm * (F * (1/2 - par.airfoil.a) + (G/k)) + (-np.pi * (1/2 - par.airfoil.a))
-    M_alpha =  2 * par.dCm * (F - k * G * (1/2 - par.airfoil.a))
+    M_alpha_dot = 2 * par.dCM * (F * (1/2 - par.airfoil.a) + (G/k)) + (-np.pi * (1/2 - par.airfoil.a))
+    M_alpha =  2 * par.dCM * (F - k * G * (1/2 - par.airfoil.a))
 
     return L_w_dot_dot, L_w_dot, L_w, L_alpha_dot_dot, L_alpha_dot, L_alpha, M_w_dot_dot, M_w_dot, M_w, M_alpha_dot_dot, M_alpha_dot, M_alpha
 
 def TheodoresenAeroModel(par,U,omega):
     """
     Build the added aerodynamic mass, stiffness and damping matrices predicted by the Theodoresen model.
+
+    /!\ we don't want to send a k=0 to CooperWrightNotation because of division by k in some terms
     """
+    
     if U!=0:
         k = par.airfoil.b * omega / U
+        if k==0:
+            k = 1e-8
         L_w_dot_dot, L_w_dot, L_w, L_alpha_dot_dot, L_alpha_dot, L_alpha, M_w_dot_dot, M_w_dot, M_w, M_alpha_dot_dot, M_alpha_dot, M_alpha = CooperWrightNotation(par,k)
         phi_ww, phi_alphaalpha, phi_walpha = modalMatrices(par)
 
@@ -1027,6 +1045,7 @@ def TheodoresenAeroModel(par,U,omega):
         Ka = np.zeros((par.Nalpha+par.Nw+par.Nv,par.Nalpha+par.Nw+par.Nv))
         Ca = np.zeros((par.Nalpha+par.Nw+par.Nv,par.Nalpha+par.Nw+par.Nv))
         Ma = np.zeros((par.Nalpha+par.Nw+par.Nv,par.Nalpha+par.Nw+par.Nv))
+
     return Ka, Ca, Ma
 
 ''' Eigenvalue problem and modal parameters extraction '''
@@ -1161,6 +1180,12 @@ def ModalParamDyn(par, tracked_idx=(0,1,2,3), compute_shapes=False, compute_ener
     w_modes_U = np.zeros((len(U), par.Nq, Ny))
     alpha_modes_U = np.zeros((len(U), par.Nq, Ny))
     f_modes_U = np.zeros((len(U), par.Nq)) # not the same as f, this is the frequency of each mode at each U, not only the tracked ones
+    # Stocke les vecteurs propres complexes sans perte de la partie imaginaire
+    # eigvecs_U = np.zeros((len(U), 2*par.Nq, par.Nq), dtype=complex)  # matrice pour stocker les vecteurs propres de A
+    eigvecs_U = np.zeros((len(U), 2*par.Nq, len(tracked_idx)), dtype=complex)
+    f_modes_U = np.zeros((len(U), len(tracked_idx)))
+    #peut être réduire la taille de cette matrice en ne gardant que les modes suivis ?
+    #same for f_modes_U ?
 
     # densité énergie cinétique normalisée car ça dépend de omega² sinon
     T_ew_U = np.zeros((len(U), par.Nq, Ny))
@@ -1170,8 +1195,7 @@ def ModalParamDyn(par, tracked_idx=(0,1,2,3), compute_shapes=False, compute_ener
     U_ew_U = np.zeros((len(U), par.Nq, Ny))
     U_ea_U = np.zeros((len(U), par.Nq, Ny))
 
-    # Stocke les vecteurs propres complexes sans perte de la partie imaginaire
-    eigvecs_U = np.zeros((len(U), 2*par.Nq, par.Nq), dtype=complex)  # matrice pour stocker les vecteurs propres de A
+    
 
     if (track_using == 'fields'):
         compute_shapes = True  # we need shapes to track using fields
@@ -1191,8 +1215,9 @@ def ModalParamDyn(par, tracked_idx=(0,1,2,3), compute_shapes=False, compute_ener
         w = np.imag(eigvals)
         f0 = w/(2*np.pi)
 
-        eigvecs_U[i,:,:] = eigvecs
-        f_modes_U[i, :] = f0
+        # we want to store all the eigenvectors of tracked modes for each U
+        # eigvecs_U[i,:,:] = eigvecs # store all the eigenvectors for every U
+        # f_modes_U[i, :] = f0 # store all the modes' frequencies for every U
         '''
         actually, we must reorder the modes to keep tracking the same modes even in this eigvecs_U and f_modes_U matrices
         it works to keep the brut order if the modes don't cross, but when they cross it fails
@@ -1241,15 +1266,23 @@ def ModalParamDyn(par, tracked_idx=(0,1,2,3), compute_shapes=False, compute_ener
             prev_rel = [curr_rel[j] for j in tracked_idx]
 
         # fill outputs for the tracked modes only
-        k_list = tracked_idx
+        k_list = np.array(tracked_idx)
         for j, k in enumerate(k_list):
+            # que pour les modes suivis != Nq
             f[i, j] = f0[k]
             damping[i, j] = zeta[k]
             realpart[i, j] = p[k]
 
+        # eigvecs_U and f_modes_U are waiting for the whole set of modes, not only the tracked ones
+        eigvecs_U[i,:,:] = eigvecs[:,k_list]
+        f_modes_U[i, :] = f0[k_list]
+
         # keep omega ref near the followed modes (updating the reduced frequency for Theodorsen model)
         # previous_omega = float(np.mean(w[list(tracked_idx)]))
         previous_omega = float(w[k_list[0]]+w[k_list[1]])/2
+        '''
+        the problem is that sometimes both frequenties approach 0 so then the k=omega b/U is also 0 and Theodorsen model is not valid anymore
+        '''
         # JE SAIS pas si on doit faire la moyenne de tous les omega pour la freq réduite ou que des modes qui nous intéresse ?
         # previous_omega = 0.5 * (w[k_list[1]] + w[k_list[]])
     
@@ -1356,7 +1389,7 @@ def obj_evaluation(U, damping, return_status=False):
         count = 0
         count = sum(s[i] * s[i-1] < 0 for i in range(1, len(s)))
 
-        if count ==0 : # no negative slope at all
+        if count < 2 : 
             Uc_best = Uc_malus + beta*damping[-1]  # penalization value if no crossing found
             slope_cross = 0.0
             status = 'censored'
@@ -1369,6 +1402,9 @@ def obj_evaluation(U, damping, return_status=False):
             '''
             slope_cross = 0.0
             status = 'censored'
+        Uc_best = 70
+        slope_cross = 0.0
+        status = 'censored'
 
 
 

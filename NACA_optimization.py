@@ -1,6 +1,4 @@
 #%%
-from re import A, U
-from turtle import mode
 import numpy as np
 import NACA
 import ROM
@@ -119,7 +117,7 @@ termination = DefaultSingleObjectiveTermination(
     n_max_gen=5  # sécurité : limite dure si jamais ça n'a pas convergé
 )
 
-#%%______MINIZATION______________________________________________________________________________
+#%%______MINIZATION for a single target mode______________________________________________________________________________
 
 '''
 termination = DefaultSingleObjectiveTermination(
@@ -158,75 +156,6 @@ np.savez(f'data/res_target_{target_mode_idx}_'+algorithm_name,resX=res.X, resF =
 
 
 
-
-
-#%%_____test optimal solution_______________________________________________________________________
-algorithm_name = "GA"
-target_mode_idx=0
-
-data = np.load(f'data/res_target_{target_mode_idx}_'+algorithm_name+'.npz')
-X_opt = map_to_physical(data['resX'])
-s, c = 2.0, 0.2
-m = 2.4
-eta_w = 0.005
-eta_alpha = 0.005
-XX = [X_opt[0]*c,X_opt[1]*c,X_opt[2],X_opt[3]]
-# x_ea = 0.05
-# x_cg = 0.12
-# EIx = 447
-# GJ = 41
-x_ea = XX[0]
-x_cg = XX[1]
-EIx = XX[2]
-GJ = XX[3]
-# x_cg=0.12
-model = ModelParameters(s, c, x_ea=x_ea, x_cg=x_cg, m=m, EIx=EIx, GJ=GJ, eta_w=eta_w, eta_alpha=eta_alpha,model_aero= 'Theodorsen')
-model.airfoil.plot_naca00xx_section()
-
-f0, zeta0, eigvals0, eigvecs0, w_modes, alpha_modes, energy_dict = ROM.ModalParamAtRest(model) # normalize = 'per_field' or 'per_mode'
-Vq = eigvecs0[:model.Nq, :]
-
-phase0 = ROM._rel_phase_from_eigvec(model, Vq[:,0])
-phase1 = ROM._rel_phase_from_eigvec(model, Vq[:,1])
-phase2 = ROM._rel_phase_from_eigvec(model, Vq[:,2])
-print(f'Phase à U = 0 > mode 0 : {phase0:.4f} rad, mode 1 : {phase1:.4f} rad, mode 2 : {phase2:.4f} rad')
-
-# model.Ustep = 500
-# model.Ustep = 15
-f, damping, eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model)
-Vq_U = eigvecs_U[:,:model.Nq, :]
-
-
-idx_flutter = 51
-phase0_U = ROM._rel_phase_from_eigvec(model, Vq_U[idx_flutter,:,0])
-phase1_U = ROM._rel_phase_from_eigvec(model, Vq_U[idx_flutter,:,1])
-phase2_U = ROM._rel_phase_from_eigvec(model, Vq_U[idx_flutter,:,2])
-print(f'Phase à U = {model.U[idx_flutter]:.1f} m/s > mode 0 : {phase0_U:.4f} rad, mode 1 : {phase1_U:.4f} rad, mode 2 : {phase2_U:.4f} rad')
-
-phi1 = np.angle(Vq_U[idx_flutter,0,1])
-phi2 = np.angle(Vq_U[idx_flutter,3,1])
-dphi = phi2 - phi1
-
-
-
-# Uc0, _ , status = ROM.obj_evaluation(U = model.U, damping = damping[:,0], return_status=True)
-Uc, _ , status = ROM.obj_evaluation(U = model.U, damping = damping[:,target_mode_idx], return_status=True)
-Uc2, _ , status = ROM.obj_evaluation(U = model.U, damping = damping[:,2], return_status=True)
-# Uc3, _ , status = ROM.obj_evaluation(U = model.U, damping = damping[:,3], return_status=True)
-# Uc4, _ , status = ROM.obj_evaluation(U = model.U, damping = damping[:,4], return_status=True)
-# Uc5, _ , status = ROM.obj_evaluation(U = model.U, damping = damping[:,5], return_status=True)
-
-
-plotter.plot_modal_data_single(f,damping,model, suptitle=f'EIx = {model.EIx:.1f}, GJ = {model.GJ:.1f}, x_ea = {model.airfoil.x_ea:.3f}, x_cg = {model.airfoil.x_cg:.3f}, Uc = {Uc:.1f}')
-plotter.plot_vi_grid(Vq=Vq, Nw=model.Nw, Nalpha=model.Nalpha, freqs_hz=f0, kind='abs', normalize='l2', sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
-
-plotter.plot_vi_grid_over_U(U=model.U,
-                            Vq_U=Vq_U,
-                            Nw=model.Nw,
-                            Nalpha=model.Nalpha,
-                            f_modes_U=f_modes_U,
-                            normalize = 'l2',
-                            mode_indices=(0,1,2))
 #%%______________________ test de Uc(x1) pour voir comment on rempli les trous
 s, c = 2.0, 0.2
 m = 2.4
@@ -290,7 +219,7 @@ plt.tight_layout()
 plt.show()
 # %%_______________________optim on different tracked modes_________________________________________
 
-for i in [0,1]: # mode to obj_track 
+for i in [0]: # mode to obj_track 
     
     problem_optim_NACA  = ProblemOptim(n_var = para_interval.shape[0], n_obj = n_obj, 
                                     n_ieq_constr = n_ieq_constr, # nombre de contrainted par inéquation
@@ -298,7 +227,7 @@ for i in [0,1]: # mode to obj_track
                                     target_mode_idx=i # the mode on which we'll look for the lowest Uc
     )
 
-    algorithm_name = "GA"
+    algorithm_name = "DE"
     algorithm = algorithms[algorithm_name]
 
     termination = DefaultSingleObjectiveTermination(
@@ -309,10 +238,10 @@ for i in [0,1]: # mode to obj_track
     res = minimize(
                     problem_optim_NACA, # herite forcement de la classe Problem et doit présenter une fonction _evaluate() bien définie
                     algorithm,       #objet algo optim, il définit le type d'algo d'optim utilisé
-                    ('n_gen', 8),       # terminaison : critère d'arrêt pour l'algo, ici on fait n génération et on s'arrête
+                    ('n_gen', 25),       # terminaison : critère d'arrêt pour l'algo, ici on fait n génération et on s'arrête
                     # termination=termination,
                     verbose=True,       # pour afficher ou non les info du processus d'optim, utile pour debug
-                    seed=54              # permet de reproduire les résultats en fixant la séquence aléatoire
+                    seed=57              # permet de reproduire les résultats en fixant la séquence aléatoire
                     )                   # save_history(optionnel) sur True l'historique de générations sera enregistré pour un post traitement
     np.savez(f'data/res_target_{i}_{algorithm_name}.npz', resX=res.X, resF=res.F)
 
