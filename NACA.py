@@ -179,6 +179,7 @@ class NACA:
         show: bool = True,
         annotate: bool = True,
         fill: bool = True,
+        title = False,
         save = False,
         filename: str = f'naca00xx_section'
     ):
@@ -248,7 +249,8 @@ class NACA:
 
         # Formatting
         tc_percent = int(round(t_c * 100))
-        ax.set_title(f'NACA00{tc_percent:02d} section (c = {self.c:g} m)')
+        if title:
+            ax.set_title(f'NACA00{tc_percent:02d} section (c = {self.c:g} m)')
         ax.set_xlabel('x [m] (from Leading Edge)')
         ax.set_ylabel('z [m]')
         ax.set_aspect('equal', adjustable='box')

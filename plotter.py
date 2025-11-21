@@ -78,7 +78,7 @@ def plot_modal_data_single(f,
     mode_labels = [fr"$\psi^{{{j+1}}}$" for j in range(n_modes)]
 
     # Figure
-    fig, ax = plt.subplots(2, 1, sharex=True, constrained_layout=True, figsize=figsize)
+    fig, ax = plt.subplots(2, 1, sharex=True, constrained_layout=True, figsize=(5.5,2.25))
     if suptitle is not None:
         fig.suptitle(suptitle)
 
@@ -331,9 +331,9 @@ def plot_vi(vi: np.ndarray,
     idx_a = Nw + np.arange(Nalpha)
 
     if kind == 'abs':
-        ax.bar(idx_w, np.abs(vw), color='#4C78A8', label=bending_label)
-        ax.bar(idx_a, np.abs(va), color='#F58518', label=torsion_label)
-        ax.set_ylabel("$\psi^i$ component magnitude")
+        ax.bar(idx_w, np.abs(vw), color="#0026FF", label=bending_label)
+        ax.bar(idx_a, np.abs(va), color='#5900FF', label=torsion_label)
+        ax.set_ylabel("$|\psi^i_{\_,j}|$")
         ax.set_title("Modal coefficients (magnitude)")
     elif kind == 'real_imag':
         width = 0.38
@@ -380,8 +380,8 @@ def plot_vi_grid(Vq: np.ndarray, Nw: int, Nalpha: int,
                  show: bool = True,
                  save: bool = False,
                  filename: str = 'vi_grid',
-                 bending_label: str = r'$\psi_w$',
-                 torsion_label: str = r'$\psi_\alpha$',
+                 bending_label: str = r'$\psi_{w,j}$',
+                 torsion_label: str = r'$\psi_{\alpha,j}$',
 ):
     Vq = np.asarray(Vq)
     assert Vq.shape[0] == Nw + Nalpha, "Vq must have Nw+Nalpha rows"
@@ -417,6 +417,10 @@ def plot_vi_grid(Vq: np.ndarray, Nw: int, Nalpha: int,
         if freqs_hz is not None:
             title += f" (f={float(freqs_hz[jm]):.2f} Hz)"
         ax.set_title(title)
+
+        # Only keep the y-label on the leftmost subplot to avoid repetition
+        if i > 0:
+            ax.set_ylabel("")
 
         if i == n_modes - 1:
             ax.legend(frameon=False)

@@ -99,13 +99,14 @@ plotter.plot_vi_grid_over_U(U=model_maxime.U,
 
 
 #%% __________________________ULiege wing configuration__________________
+save=True
 model_liege = ModelParameters(s=1.2, c=0.16, x_ea= c/4, x_cg=0.41*c, m=1.106, EIx=18.19, GJ=21.27, eta_w=0.005, eta_alpha=0.005, model_aero='Theodorsen')
 model_liege.Umax=44.5
 model_liege.Ustep=100
 f, damping,eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model_liege, tracked_idx=(0,1,2), track_using=None)
 Vq_U = eigvecs_U[:,:model_liege.Nq, :]
 Uc, _ , status = ROM.obj_evaluation(U = model_liege.U, damping = damping[:,1], return_status=True)
-plotter.plot_modal_data_single(f,damping,model_liege, Uc = Uc,colors = ['tab:blue','tab:green','tab:orange'], save = True, filename='model_liege_ref') #suptitle='Existing wing model - Frequencies and damping evolution'
+plotter.plot_modal_data_single(f,damping,model_liege, Uc = Uc,colors = ['tab:blue','tab:green','tab:orange'], save = save, filename='model_liege_ref') #suptitle='Existing wing model - Frequencies and damping evolution'
 
 plotter.plot_vi_grid(Vq=Vq_U[0,:,:], Nw=model_liege.Nw, Nalpha=model_liege.Nalpha, freqs_hz=f[0,:], kind='abs', normalize='l2', sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
 plotter.plot_vi_grid_over_U(U=model_liege.U,
@@ -118,7 +119,7 @@ plotter.plot_vi_grid_over_U(U=model_liege.U,
 #%%___________________________________________OPTIMAL WING____________________________________
 
 algorithm_name = "DE"
-target_mode_idx=1
+target_mode_idx=0
 save = True
 
 data = np.load(f'data/res_target_{target_mode_idx}_'+algorithm_name+'.npz')
@@ -168,7 +169,16 @@ plotter.plot_vi_wa_phase_over_U(model, model.U[mask], [phase_w_a_U_0[mask], phas
 plotter.plot_vi_contribution_over_U(U = model.U,Vq_U = Vq_U, Nw=model.Nw, Nalpha=model.Nalpha,mode_index=0,
                                     save = save, filename = f'vi_contribution_over_U_{0}')
 
-plotter.plot_vi_grid(Vq=Vq, Nw=model.Nw, Nalpha=model.Nalpha, freqs_hz=f0, kind='abs', normalize='l2', sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
+
+
+# # plot des contributions en w et alpha pour le mode instable à U = 0
+# plotter.plot_vi_grid(Vq=Vq, Nw=model.Nw, Nalpha=model.Nalpha, freqs_hz=f0, kind='abs', normalize='l2', sharey=True, suptitle=r"Modal coefficients per mode - $U = 0 m/s$",mode_indices=(0,1,2))
+
+# plot des contributions en w et alpha pour le mode instable à U = U[-1]
+plotter.plot_vi_grid(Vq=Vq_U[-1,:,:], Nw=model.Nw, Nalpha=model.Nalpha, freqs_hz=f0, kind='abs', normalize='l2', sharey=True,mode_indices=(0,1), # suptitle=rf"$U = {model.U[-1]} m/s$",
+                     save = save, filename = f'vi_grid_Uc_{target_mode_idx}')
+
+
 plotter.plot_vi_grid_over_U(U=model.U,
                             Vq_U=Vq_U,
                             Nw=model.Nw,
@@ -216,8 +226,8 @@ then we plot w(y=s,t) alpha(y=s,t) + FFT
 f, damping, eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model, tracked_idx= (0,1,2,3,4,5))
 coupled_mode_idx = np.array([0,1])
 
-U = 26
-# we get the freq at U
+U = 24.9
+# we get the freq at U, we will only look at that speed
 idx = np.where(model.U >= U)[0][0]
 f_at_U = f[idx,:]
 omega_ref = 2*np.pi*(f_at_U[coupled_mode_idx[0]]+f_at_U[coupled_mode_idx[1]])*0.5
