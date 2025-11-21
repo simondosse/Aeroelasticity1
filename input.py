@@ -6,7 +6,10 @@ class ModelParameters:
     Define the parameters of the model.
     """
 
-    def __init__(self,s, c, x_ea, x_cg, m, EIx, GJ, eta_w=0.005, eta_alpha=0.005, Mt=None, I_alpha_t=None, x_t=None, model_aero = 'Theodorsen'):
+    def __init__(self,s, c, x_ea, x_cg, m, EIx, GJ, eta_w=0.005, eta_alpha=0.005,
+                 dCL = None, dCM = None,
+                 Mt=None, I_alpha_t=None, x_t=None,
+                 model_aero = 'Theodorsen'):
         ''' 
         Initialize the model parameters.
 
@@ -83,9 +86,17 @@ class ModelParameters:
         '''
         the slope of aero coeff should be attribut of NACA ? actually nop if it's 3D coeff
         '''
-        tau = 0.875
-        self.dCL = self.airfoil.a0/(1+(self.airfoil.a0/(np.pi*self.AR))*(1+tau))   # Normal force coefficient, normalement c'est 2pi pour une aile infinie, pour une aile finie on la correction a0 / (1 + a0/(π e AR))
-        self.dCM = (self.airfoil.x_ea-self.airfoil.x_ac)/self.airfoil.c*self.dCL    # Moment coefficient, /!\ x_ea-x_ac > 0 iff x_ea is behind x_ac, NOT ALWAYS TRUE dependidng on the intervals' boundaries chosen for x_ea
+        tau = 0.875 # identified during experiments
+
+        if dCL is not None:
+            self.dCL = dCL
+        else:
+            self.dCL = self.airfoil.a0/(1+(self.airfoil.a0/(np.pi*self.AR))*(1+tau))   # Normal force coefficient, normalement c'est 2pi pour une aile infinie, pour une aile finie on la correction a0 / (1 + a0/(π e AR))
+        
+        if dCM is not None:
+            self.dCM = dCM
+        else:
+            self.dCM = (self.airfoil.x_ea-self.airfoil.x_ac)/self.airfoil.c*self.dCL    # Moment coefficient, /!\ x_ea-x_ac > 0 iff x_ea is behind x_ac, NOT ALWAYS TRUE dependidng on the intervals' boundaries chosen for x_ea
         # actually the dCm shoudn't be computed by the same formula in the stall region the curve is not linear anymore AND dCm depends on x_ea relative to x_ac!!!
 
         self._Umax = 30                          # Maximum velocity of the IAT wind tunnel

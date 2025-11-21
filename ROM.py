@@ -1279,7 +1279,7 @@ def ModalParamDyn(par, tracked_idx=(0,1,2,3), compute_shapes=False, compute_ener
 
         # keep omega ref near the followed modes (updating the reduced frequency for Theodorsen model)
         # previous_omega = float(np.mean(w[list(tracked_idx)]))
-        previous_omega = float(w[k_list[0]]+w[k_list[1]])/2
+        previous_omega = float(w[k_list[1]]+w[k_list[2]])/2
         '''
         the problem is that sometimes both frequenties approach 0 so then the k=omega b/U is also 0 and Theodorsen model is not valid anymore
         '''

@@ -27,6 +27,7 @@ def plot_modal_data_single(f,
                            suptitle: Optional[str] = None,
                            Uc: Optional[float] = None,
                            colors: Optional[list] = None,
+                           figsize: bool = False,
                            save: bool = False,
                            filename: str = 'modal_data'):
     """
@@ -42,6 +43,10 @@ def plot_modal_data_single(f,
     f = np.asarray(f)
     z = np.asarray(damping)
 
+    if figsize :
+        figsize = figsize # on laisse la possibilité de passer une taille personnalisée, on change le paramètre global figsize
+    else:
+        figsize = (5.5,2.25)
     if U is None:
         if par is None or not hasattr(par, 'U'):
             raise ValueError("Provide U or a ModelParameters 'par' with U.")
@@ -78,7 +83,7 @@ def plot_modal_data_single(f,
     mode_labels = [fr"$\psi^{{{j+1}}}$" for j in range(n_modes)]
 
     # Figure
-    fig, ax = plt.subplots(2, 1, sharex=True, constrained_layout=True, figsize=(5.5,2.25))
+    fig, ax = plt.subplots(2, 1, sharex=True, constrained_layout=True, figsize=figsize)
     if suptitle is not None:
         fig.suptitle(suptitle)
 
@@ -215,24 +220,33 @@ def plot_modal_data_two(fa,
 
 def plot_params_table(par, save: bool = False, filename: str = 'param_table'):
     # Construire un dict lisible des principaux paramètres
+
+    def round_sig(x, sig=3):
+        if x == 0:
+            return 0
+        return round(x, sig - int(np.floor(np.log10(abs(x)))) - 1)
+
     items = [
         ("model_aero", par.model_aero),
-        ("s", par.s),
-        ("c", par.airfoil.c),
-        ("x_ea", par.airfoil.x_ea),
-        ("x_cg", par.airfoil.x_cg),
-        ("m", par.airfoil.m),
-        ("EIx", par.EIx),
-        ("GJ", par.GJ),
-        ("eta_w", par.eta_w),
-        ("eta_alpha", par.eta_alpha),
-        ("Mt", par.Mt),
-        ("I_alpha_t", par.I_alpha_t),
-        ("x_t", par.x_t),
-        ("Nw", par.Nw),
-        ("Nalpha", par.Nalpha),
-        ("Umax", par.Umax),
-        ("steps", par.steps),
+        (r"$s$", round_sig(par.s)),
+        (r"$c$", round_sig(par.airfoil.c)),
+        (r"$x_{ea}$", round_sig(par.airfoil.x_ea)),
+        (r"$x_{cg}$", round_sig(par.airfoil.x_cg)),
+        (r"$m$", round_sig(par.airfoil.m)),
+        (r"$EI_x$", round_sig(par.EIx)),
+        (r"GJ", round_sig(par.GJ)),
+        (r"$I_{\alpha,EA}$", round_sig(par.airfoil.Ialpha_EA)),
+        (r"$\zeta_w$", round_sig(par.eta_w)),
+        (r"$\zeta_{\alpha}$", round_sig(par.eta_alpha)),
+        (r"$dC_L$", round_sig(par.dCL)),
+        (r"$dC_M$", round_sig(par.dCM)),
+        (r"$M_t$", round_sig(par.Mt)),
+        (r"$I_{\alpha,t}$", round_sig(par.I_alpha_t)),
+        (r"$x_t$", round_sig(par.x_t)),
+        (r"$N_w$", par.Nw),
+        (r"$N_{\alpha}$", par.Nalpha),
+        (r"$U_{max}$", round_sig(par.Umax)),
+        (r"$nU$", par.Ustep),
     ]
     # Filtrer None
     table_data = [[k, str(v)] for k, v in items if v is not None]
@@ -332,7 +346,7 @@ def plot_vi(vi: np.ndarray,
 
     if kind == 'abs':
         ax.bar(idx_w, np.abs(vw), color="#0026FF", label=bending_label)
-        ax.bar(idx_a, np.abs(va), color='#5900FF', label=torsion_label)
+        ax.bar(idx_a, np.abs(va), color="#A200FF", label=torsion_label)
         ax.set_ylabel("$|\psi^i_{\_,j}|$")
         ax.set_title("Modal coefficients (magnitude)")
     elif kind == 'real_imag':
@@ -712,7 +726,7 @@ def plot_mode_shapes_grid(y, freqs_hz, W=None, ALPHA=None,extras=None,normalize=
     styles : dict[str, str] or None
         Styles de ligne par champ, ex. {'w':'-','alpha':'--','v':':' }.
     sharey : bool
-        Partage de l’axe Y entre subplots.
+        Partage de l'axe Y entre subplots.
     figsize : tuple or None
         Taille figure (L, H). Défaut calculé sur le nb de modes.
     suptitle : str or None
@@ -857,7 +871,7 @@ def plot_mode_shapes_grid_over_U(y, U, WU=None, ALPHAU=None, f_modes_U=None,
     -----
     - WU/ALPHAU are expected as (nU, n_modes, Ny) from your ModalParamDyn.
     - Each subplot overlays w and alpha for a single (mode, U) pair.
-    Columns = modes; rows = selected U’s.
+    Columns = modes; rows = selected U's.
     """
     import numpy as np
     import matplotlib.pyplot as plt

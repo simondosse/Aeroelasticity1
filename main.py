@@ -29,10 +29,10 @@ from scipy.linalg import eigh
 #     'axes.labelsize': 11,                 # Taille des labels d'axes
 # })
 
-#%% Set and run models, save data
+#%%_________________CAS IAT________________________________
 
 ''' Structural parameters '''
-s = 2 #half span
+s=1.5 # span
 c = 0.2 #chord
 x_ea = c/3 # elastic axis location from leading edge
 x_cg = 0.379*c # center of gravity location from leading edge
@@ -43,11 +43,8 @@ GJ = 78 # torsional stiffness
 eta_w = 0.005 # structural damping ratio in bending
 eta_alpha = 0.005 # structural damping ratio in torsion, damping ratio are arbitrary choosen here
 
-
-
-#%%_________________CAS IAT________________________________
-
-
+dCL = 3.8999
+dCM = 0.4693
 
 ''' Wingtip parameters '''
 
@@ -62,36 +59,34 @@ else:
     I_alpha_t = None
     x_t = None
 
-
-s=1.5
-Uc=70
-
 # factor_GJ = np.random.uniform(0.8, 1.2)
 # factor_EIx = np.random.uniform(0.8, 1.2)
 # GJ = GJ * factor_GJ
 # EIx = EIx * factor_EIx
 
-GJ = 71.5
-EIx= 264.1
+# GJ = 71.5
+# EIx= 264.1
 
-model_maxime = ModelParameters(s, c, x_ea, x_cg, m, EIx, GJ, eta_w, eta_alpha, Mt, I_alpha_t, x_t, model_aero='Theodorsen')
-model_maxime.Umax=50
-model_maxime.Ustep=100
+model_iat = ModelParameters(s, c, x_ea, x_cg, m, EIx, GJ, eta_w, eta_alpha,
+                            dCL = dCL, dCM = dCM,
+                            Mt = Mt , I_alpha_t = I_alpha_t , x_t = x_t, model_aero='Theodorsen')
+model_iat.airfoil.plot_naca00xx_section()
 
+model_iat.Umax=35
+model_iat.Ustep=100
 
-f, damping,eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model_maxime, tracked_idx=(0,1,2), track_using=None)
-Vq_U = eigvecs_U[:,:model_maxime.Nq, :]
-plotter.plot_modal_data_single(f,damping,model_maxime, suptitle='Modal data for cross-validation model')
-Uc, _ , status = ROM.obj_evaluation(U = model_maxime.U, damping = damping[:,1], return_status=True)
+plotter.plot_params_table(model_iat, save = True, filename='model_iat_params_table')
+f, damping,eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model_iat, tracked_idx=(0,1,2), track_using=None)
+Vq_U = eigvecs_U[:,:model_iat.Nq, :]
+plotter.plot_modal_data_single(f,damping,model_iat, suptitle='IAT wing model - Frequencies and damping evolution', figsize=(6,4))
+Uc, _ , status = ROM.obj_evaluation(U = model_iat.U, damping = damping[:,1], return_status=True)
 
+plotter.plot_vi_grid(Vq=Vq_U[0,:,:], Nw=model_iat.Nw, Nalpha=model_iat.Nalpha, freqs_hz=f[0,:], kind='abs', normalize='l2', sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
 
-
-plotter.plot_vi_grid(Vq=Vq_U[0,:,:], Nw=model_maxime.Nw, Nalpha=model_maxime.Nalpha, freqs_hz=f[0,:], kind='abs', normalize='l2', sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
-
-plotter.plot_vi_grid_over_U(U=model_maxime.U,
+plotter.plot_vi_grid_over_U(U=model_iat.U,
                             Vq_U=Vq_U,
-                            Nw=model_maxime.Nw,
-                            Nalpha=model_maxime.Nalpha,
+                            Nw=model_iat.Nw,
+                            Nalpha=model_iat.Nalpha,
                             f_modes_U=f_modes_U,
                             normalize = 'l2',
                             mode_indices=(0,1,2))
@@ -99,14 +94,16 @@ plotter.plot_vi_grid_over_U(U=model_maxime.U,
 
 
 #%% __________________________ULiege wing configuration__________________
-save=True
+save=False
 model_liege = ModelParameters(s=1.2, c=0.16, x_ea= c/4, x_cg=0.41*c, m=1.106, EIx=18.19, GJ=21.27, eta_w=0.005, eta_alpha=0.005, model_aero='Theodorsen')
+model_liege.airfoil.plot_naca00xx_section()
 model_liege.Umax=44.5
 model_liege.Ustep=100
 f, damping,eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model_liege, tracked_idx=(0,1,2), track_using=None)
 Vq_U = eigvecs_U[:,:model_liege.Nq, :]
 Uc, _ , status = ROM.obj_evaluation(U = model_liege.U, damping = damping[:,1], return_status=True)
-plotter.plot_modal_data_single(f,damping,model_liege, Uc = Uc,colors = ['tab:blue','tab:green','tab:orange'], save = save, filename='model_liege_ref') #suptitle='Existing wing model - Frequencies and damping evolution'
+plotter.plot_modal_data_single(f,damping,model_liege, Uc = Uc,colors = ['tab:blue','tab:green','tab:orange'],suptitle='Liège wing model - Frequencies and damping evolution',
+                               save = save, filename='model_liege_ref') #
 
 plotter.plot_vi_grid(Vq=Vq_U[0,:,:], Nw=model_liege.Nw, Nalpha=model_liege.Nalpha, freqs_hz=f[0,:], kind='abs', normalize='l2', sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
 plotter.plot_vi_grid_over_U(U=model_liege.U,
@@ -119,7 +116,7 @@ plotter.plot_vi_grid_over_U(U=model_liege.U,
 #%%___________________________________________OPTIMAL WING____________________________________
 
 algorithm_name = "DE"
-target_mode_idx=0
+target_mode_idx=1
 save = True
 
 data = np.load(f'data/res_target_{target_mode_idx}_'+algorithm_name+'.npz')
@@ -307,7 +304,7 @@ we must look mode per mode to see > and < 0 regions
 
 '''
 #%% same but mode per mode
-k=0
+k=1
 W_tot = np.zeros(model.y.shape)
 # for k in [0,1,2,3,4,5]:
 idx_U=-1
