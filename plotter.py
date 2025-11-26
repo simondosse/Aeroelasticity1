@@ -3,10 +3,13 @@ from cProfile import label
 import os
 from re import L
 import numpy as np
+import json
 
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from matplotlib import animation
+import matplotlib.patches as mpatches
+from pyparsing import col
 
 from data_manager import _load_npz
 from typing import Tuple, Optional 
@@ -18,7 +21,13 @@ mpl.rcParams.update({
 "font.serif": ["Computer Modern Roman"],
 })
 
+# Colors used both in python plots and in LaTeX documents (on Inkscape figures for examples)
+with open("colors_set.json", "r") as f:
+    colors_set = json.load(f)
+
 figsize = (5.5,4)  # Taille des figures (format article)
+
+''' FREQ & DAMPING PLOTTING FUNCTIONS '''
 
 def plot_modal_data_single(f,
                            damping,
@@ -220,29 +229,29 @@ def plot_modal_data_two(fa,
 
 def plot_params_table(par, save: bool = False, filename: str = 'param_table'):
     # Construire un dict lisible des principaux paramètres
-
-    def round_sig(x, sig=3):
+    sig = 4
+    def round_sig(x, sig=4):
         if x == 0:
             return 0
         return round(x, sig - int(np.floor(np.log10(abs(x)))) - 1)
 
     items = [
         ("model_aero", par.model_aero),
-        (r"$s$", round_sig(par.s)),
-        (r"$c$", round_sig(par.airfoil.c)),
-        (r"$x_{ea}$", round_sig(par.airfoil.x_ea)),
-        (r"$x_{cg}$", round_sig(par.airfoil.x_cg)),
-        (r"$m$", round_sig(par.airfoil.m)),
-        (r"$EI_x$", round_sig(par.EIx)),
-        (r"GJ", round_sig(par.GJ)),
-        (r"$I_{\alpha,EA}$", round_sig(par.airfoil.Ialpha_EA)),
-        (r"$\zeta_w$", round_sig(par.eta_w)),
-        (r"$\zeta_{\alpha}$", round_sig(par.eta_alpha)),
-        (r"$dC_L$", round_sig(par.dCL)),
-        (r"$dC_M$", round_sig(par.dCM)),
-        (r"$M_t$", round_sig(par.Mt)),
-        (r"$I_{\alpha,t}$", round_sig(par.I_alpha_t)),
-        (r"$x_t$", round_sig(par.x_t)),
+        (r"$s$", round_sig(par.s,sig=sig)),
+        (r"$c$", round_sig(par.airfoil.c,sig=sig)),
+        (r"$x_{ea}$", round_sig(par.airfoil.x_ea,sig=sig)),
+        (r"$x_{cg}$", round_sig(par.airfoil.x_cg,sig=sig)),
+        (r"$m$", round_sig(par.airfoil.m,sig=sig)),
+        (r"$EI_x$", round_sig(par.EIx,sig=sig)),
+        (r"GJ", round_sig(par.GJ,sig=sig)),
+        (r"$I_{\alpha,EA}$", round_sig(par.airfoil.Ialpha_EA,sig=sig)),
+        (r"$\zeta_w$", round_sig(par.eta_w,sig=sig)),
+        (r"$\zeta_{\alpha}$", round_sig(par.eta_alpha,sig=sig)),
+        (r"$dC_L$", round_sig(par.dCL,sig=sig)),
+        (r"$dC_M$", round_sig(par.dCM,sig=sig)),
+        (r"$M_t$", round_sig(par.Mt,sig=sig)),
+        (r"$I_{\alpha,t}$", round_sig(par.I_alpha_t,sig=sig)),
+        (r"$x_t$", round_sig(par.x_t,sig=sig)),
         (r"$N_w$", par.Nw),
         (r"$N_{\alpha}$", par.Nalpha),
         (r"$U_{max}$", round_sig(par.Umax)),
@@ -260,7 +269,7 @@ def plot_params_table(par, save: bool = False, filename: str = 'param_table'):
 
     table = ax.table(
         cellText=table_data,
-        colLabels=["Parameter", "Value"],
+        colLabels=["Parameter", f"Value"],
         loc='center',
         cellLoc='left'
     )
@@ -274,6 +283,8 @@ def plot_params_table(par, save: bool = False, filename: str = 'param_table'):
         os.makedirs('images', exist_ok=True)
         fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
     plt.show()
+
+''' EIGVECTOR COEFFICIENTS PLOTTING FUNCTIONS '''
 
 def plot_vi(vi: np.ndarray,
             Nw: int,
@@ -345,8 +356,10 @@ def plot_vi(vi: np.ndarray,
     idx_a = Nw + np.arange(Nalpha)
 
     if kind == 'abs':
-        ax.bar(idx_w, np.abs(vw), color="#0026FF", label=bending_label)
-        ax.bar(idx_a, np.abs(va), color="#A200FF", label=torsion_label)
+        # ax.bar(idx_w, np.abs(vw), color="#0026FF", label=bending_label)
+        # ax.bar(idx_a, np.abs(va), color="#A200FF", label=torsion_label)
+        ax.bar(idx_w, np.abs(vw), color=colors_set['strong_blue'], label=bending_label)
+        ax.bar(idx_a, np.abs(va), color = colors_set['strong_purple'], label=torsion_label)
         ax.set_ylabel("$|\psi^i_{\_,j}|$")
         ax.set_title("Modal coefficients (magnitude)")
     elif kind == 'real_imag':
@@ -697,7 +710,7 @@ def plot_vi_wa_phase_over_U(par, U, phase_w_a_list, idx_modes=None, save: bool =
         fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
     plt.show()
    
-
+# this one is not used anymore
 def plot_mode_shapes_grid(y, freqs_hz, W=None, ALPHA=None,extras=None,normalize=False,colors=None,styles=None,sharey=True,figsize=None,suptitle=None,show=True, save: bool = False, filename: str = 'nonfichier'):
     '''
     Trace les formes modales par mode, en colonnes :
@@ -822,6 +835,8 @@ def plot_mode_shapes_grid(y, freqs_hz, W=None, ALPHA=None,extras=None,normalize=
 
     return fig, axes
 
+
+# this one is not used anymore
 def plot_mode_shapes_grid_over_U(y, U, WU=None, ALPHAU=None, f_modes_U=None,
                                  mode_indices=None, n_samples=10,
                                  colors=None, styles=None,
@@ -1029,6 +1044,84 @@ def plot_mode_shapes_grid_over_U(y, U, WU=None, ALPHAU=None, f_modes_U=None,
 
     return fig, axes
 
+'''POWER, ENERGY, ETC. PLOTS'''
+
+def plot_aero_work_distribution(par, U, E_w, E_a, E,
+                                save: bool = False,
+                                filename: str = 'aero_work_distribution'):
+    '''
+    Plot the distribution of work done by aerodynamic forces along the span.
+    
+    Parameters
+    ----------
+    par : 
+        Contains model.y (spanwise locations) and model.s (span length).
+    U : float
+        Wind speed [m/s].
+    E_w : (Ny,) array
+        Work contribution from bending [J].
+    E_a : (Ny,) array
+        Work contribution from torsion [J].
+    E : (Ny,) array
+        Total work [J].
+    Returns
+    -------
+    None
+    '''    
+    fig, ax = plt.subplots(constrained_layout=True)
+    ax.plot(E_w, par.y, lw=1, color = colors_set['strong_blue'],  label='Bending contribution')
+    ax.plot(E_a, par.y, lw=1, color = colors_set['strong_purple'], label='Torsion contribution')
+    ax.plot(E, par.y, lw=2, color='k', label='Total work')
+    
+
+    # Positive side (right)
+    mask_pos = E > 0
+    ax.fill_betweenx(par.y, 0, E,
+                     where=mask_pos,
+                     color=colors_set['light_green'],
+                     alpha=0.7,
+                     interpolate=True)
+    # Negative side (left)
+    mask_neg = E < 0
+    ax.fill_betweenx(par.y, 0, E,
+                     where=mask_neg,
+                     color=colors_set['light_red'],
+                     alpha=0.7,
+                     interpolate=True)
+    #area legend patches
+    '''
+    fill_betweenx ne crée pas automatiquement de labels utilisables par la légende
+    donc on doit créer un "faux objet graphique" juste pour la légende
+    '''
+    positive_patch = mpatches.Patch(color=colors_set['light_green'], 
+                                    label='Positive work', 
+                                    alpha=0.7)
+
+    negative_patch = mpatches.Patch(color=colors_set['light_red'], 
+                                    label='Negative work', 
+                                    alpha=0.7)
+
+
+    ax.vlines(0, ymin=0, ymax=par.s, colors='k', linestyles='--', lw=0.8)
+    ax.set_xlim((-max(np.abs(E)*1.3),max(np.abs(E)*1.3)))
+    ax.set_xlabel('Work of aerodynamic forces on a period [J]')
+    ax.set_ylabel('Spanwise location y [m]')
+    ax.set_title(f'Work done by aerodynamic forces along the span at U = {U} m/s on a period')
+    ax.grid(True, linewidth=0.3, alpha=0.5)
+
+    # Fusion des légendes
+    handles, labels = ax.get_legend_handles_labels()
+    handles += [positive_patch, negative_patch]
+
+    ax.legend(handles=handles)
+
+    if save:
+        os.makedirs('images', exist_ok=True)
+        fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
+    plt.show()
+    
+
+''' ANIMATION PLOTS'''
 def animate_beam(par,t,X,U=None,n_stations=15,interval=30,
                  scale_w=1.0,scale_alpha=1.0,scale_chord=1.0,
                  show_airfoil=False,airfoil_points=60,

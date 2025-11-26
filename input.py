@@ -225,7 +225,7 @@ class ModelParameters:
 
     @x_ea.setter
     def x_ea(self, value: float) -> None:
-        self.airfoil.x_ea = float(value)
+        self.airfoil.x_ea = float(value) #x_ea et pas _x_ea car on modifie l'attribut de airfoil donc on veut lancer les update dans NACA.py
         self.dCM = (self.airfoil.x_ea-self.airfoil.x_ac)/self.airfoil.c*self.dCL   # Update dCM when x_ea changes
 
 

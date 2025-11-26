@@ -355,15 +355,22 @@ def torsionModeShapes(par):
     phi_dot_normalized = np.array(phi_dot_normalized)
     phi_dotdot_normalized = np.array(phi_dotdot_normalized)
 
-    # print('alphae')
-    # print(phi_normalized.T.shape)
+
     return phi_normalized, phi_dot_normalized, phi_dotdot_normalized
 
-def build_state_q_from_real(par, w_tip=0.0, alpha_tip=0.0, wdot_tip=0.0, alphadot_tip=0.0):
+def build_state_X_from_real(par, w_tip=0.0, alpha_tip=0.0, wdot_tip=0.0, alphadot_tip=0.0,
+                            wdotdot_tip=0.0, alphadotdot_tip=0.0, accel =False,
+                            q_content = None):
     """
-    Construit x0 (2*(Nv+Nw+Nalpha),) à partir de conditions initiales dans les champs
+    > Construit x0 (2*(Nv+Nw+Nalpha),) à partir de conditions initiales dans les champs
     physiques en bout de poutre: w_tip (m) et alpha_tip (rad), et leurs vitesses.
     Pour ne pas passer pas les q_w et q_alpha qui sont peu intuitifs pour une position initiale par exemple
+
+    on connait donc les coordonées de q(t=0) dans la base des formes modales qui permet d'avoir w(tip,t=0) et alpha(tip,t=0) voulus
+
+
+    > on peut aussi reconstruire les q_w et q_alpha à chaque pas de temps si on a w_tip(t) et alpha_tip(t),
+    pour se faire on boucle sur t et on appelle cette fonction à chaque fois
 
     Paramètres
     ----------
@@ -377,19 +384,34 @@ def build_state_q_from_real(par, w_tip=0.0, alpha_tip=0.0, wdot_tip=0.0, alphado
         Vitesse de déflexion en bout.
     alphadot_tip : float
         Vitesse de rotation en bout.
+    q_content :
+    Contrôle quels modes contribuent à la reconstruction à partir des valeurs en bout.
+
+    - None  : utilise tous les modes (solution min-norme via np.linalg.lstsq)
+    - dict           : sélection explicite de modes (indices 0-based) :
+            q_content = {
+                'B'       : [0, 1],      # modes de flexion B1 et B3
+                'T'       : [0],         # mode de torsion T1
+                # ou noms complets :
+                'bending' : [1, 3],
+                'torsion' : [1],
+            }
+        Les indices fournis sont 1-based (B1 -> 1, B2 -> 2, ...).
 
     Retour
     ------
-    x0 : ndarray shape (2*(Nv+Nw+Nalpha),)
+    X: ndarray shape (2*(Nv+Nw+Nalpha),)
         Etat initial [q ; qdot] avec q = [qv, qw, qa].
+        ou état à un instant t quelconque
+    
+    qddot :
+        Accélérations modales (optionnel)
     """
-    import numpy as np
-
     Nv = par.Nv
     Nw = par.Nw
     Nalpha = par.Nalpha
-    n_q = Nv + Nw + Nalpha
-    x0 = np.zeros(2 * n_q, dtype=float)
+    Nq = par.Nq
+    X = np.zeros(2*Nq, dtype=float)
 
     # Récupère formes modales (discrètes sur par.y), tip = dernier point
     phi_w, _, _ = bendingModeShapes(par)
@@ -397,40 +419,121 @@ def build_state_q_from_real(par, w_tip=0.0, alpha_tip=0.0, wdot_tip=0.0, alphado
     tip_idx = -1
 
     # Vecteurs de formes au tip
-    if Nw > 0:
-        phi_w_tip = np.array([phi_w[i][tip_idx] for i in range(Nw)], dtype=float).reshape(1, -1)
+    '''
+    On cherche donc le vecteur qw qui, combiné avec les valeurs des modes au tip, reproduit le déplacement souhaité.
+    il n'y pas une solution unique à qw = phi_w_tip^-1 @ w_tip_0,
+    on cherche donc la solution de norme minimal grâce à la fonction np.linalg.lstsq qui utilise la pseudo inverse
+
+    qw = argmin||q||_2 such as Phi_w(tip)q = w(tip)
+
+    Si Nw = 1 alors il y a une seule solution (inverse scalaire classique)
+
+    si Nw > 1 alors infinité de solution
+
+    np.linalg.lstsq rédout Phi_w(tip)@qw = w(tip) en donnant la solution de norme minimale 
+    qw = Phi_w[PSEUDO-INVERSE](tip) @ w(tip)
+
+
+    /!\ utiliser cette méthode minimise la norme de qw, pas forcément réaliste physiquement. Si on impose une simple déflexion au tip,
+    on peut imaginer que seul phi_w_1 est sollicité B1, or ici ça va répartir la déflexion sur tous les modes pour minimiser la norme de qw.
+    Donc on aura du B2 et B3, ce qui n'est pas forcément réaliste.
+    Solution :
+    - imposer une résolution du système avec contraintes (ex: qw2 = 0, qw3 = 0)
+    - imposer des conditions initiales plus réalistes (ex: forme de déflexion complète)
+    - ou imposer directement qw et qa initiaux
+    - trouver q qui minimise une autre norme (ex: énergie) avec contraintes
+    '''
+
+    phi_w_tip = np.array([phi_w[i][tip_idx] for i in range(Nw)], dtype=float).reshape(1, -1)
+    phi_a_tip = np.array([phi_a[i][tip_idx] for i in range(Nalpha)], dtype=float).reshape(1, -1)
+
+    if accel:
+        qddot = np.zeros(Nq, dtype=float)
+
+    if q_content == None:
+
+        ''' BENDING '''
+        
         # phi_w_tip @ qw = w_tip  -> solution min-norme
-        '''
-        On cherche donc le vecteur qw qui, combiné avec les valeurs des modes au tip, reproduit le déplacement souhaité.
-        il n'y pas une solution unique à qw = phi_w_tip^-1 @ w_tip,
-        on cherche donc la solution de norme minimal grâce à la fonction np.linalg.lstsq qui utilise la pseudo inverse
 
-        qw = argmin||q||_2 such as Phi_w(tip)q = w(tip)
-
-        Si Nw = 1 alors il y a une seule solution (inverse scalaire classique)
-
-        si Nw > 1 alors infinité de solution
-
-        np.linalg.lstsq rédout Phi_w(tip)@qw = w(tip) en donnant la solution de norme minimale 
-        qw = Phi_w[PSEUDO-INVERSE](tip) @ w(tip)
-
-        '''
+        # Déplacement w
         qw, *_ = np.linalg.lstsq(phi_w_tip, np.array([w_tip], dtype=float), rcond=None)
-        x0[Nv:Nv + Nw] = qw.ravel()
-    if Nalpha > 0:
-        phi_a_tip = np.array([phi_a[i][tip_idx] for i in range(Nalpha)], dtype=float).reshape(1, -1)
-        qa, *_ = np.linalg.lstsq(phi_a_tip, np.array([alpha_tip], dtype=float), rcond=None)
-        x0[Nv + Nw:Nv + Nw + Nalpha] = qa.ravel()
+        X[Nv:Nv + Nw] = qw.ravel()
 
-    # Vitesses au tip -> qdot via mêmes formes
-    if Nw > 0:
+        # Vitesses w
         qwdot, *_ = np.linalg.lstsq(phi_w_tip, np.array([wdot_tip], dtype=float), rcond=None)
-        x0[n_q + Nv:n_q + Nv + Nw] = qwdot.ravel()
-    if Nalpha > 0:
-        qadot, *_ = np.linalg.lstsq(phi_a_tip, np.array([alphadot_tip], dtype=float), rcond=None)
-        x0[n_q + Nv + Nw:n_q + Nv + Nw + Nalpha] = qadot.ravel()
+        X[Nq + Nv:Nq + Nv + Nw] = qwdot.ravel()
 
-    return x0
+
+        ''' TORSION '''
+        # Déplacement alpha
+        qa, *_ = np.linalg.lstsq(phi_a_tip, np.array([alpha_tip], dtype=float), rcond=None)
+        X[Nv + Nw:Nv + Nw + Nalpha] = qa.ravel()
+
+        # Vitesses alpha
+        qadot, *_ = np.linalg.lstsq(phi_a_tip, np.array([alphadot_tip], dtype=float), rcond=None)
+        X[Nq + Nv + Nw:Nq + Nv + Nw + Nalpha] = qadot.ravel()
+
+        # Accélérations
+        if accel:
+            if Nw > 0:
+                qwddot, *_ = np.linalg.lstsq(phi_w_tip, np.array([wdotdot_tip], dtype=float), rcond=None)
+                qddot[Nv:Nv + Nw] = qwddot.ravel()
+            if Nalpha > 0:
+                qaddot, *_ = np.linalg.lstsq(phi_a_tip, np.array([alphadotdot_tip], dtype=float), rcond=None)
+                qddot[Nv + Nw:Nv + Nw + Nalpha] = qaddot.ravel()
+    
+    else:
+        '''
+        On peut reconstruire le q seulement en prenant le 1er mode (le plus significatif)
+        '''
+        
+        B = q_content['bending']
+        T = q_content['torsion']
+        '''BENDING'''
+        # déplacement
+        qw = np.zeros(Nw, dtype=float)
+        if abs(phi_w_tip[:,B]) > 1e-12:
+            qw[B] = w_tip / phi_w_tip[:,B]  # seul le mode 1
+        X[Nv:Nv + Nw] = qw
+
+        # vitesse
+        qwdot = np.zeros(Nw, dtype=float)
+        if abs(phi_w_tip[:,B]) > 1e-12:
+            qwdot[B] = wdot_tip / phi_w_tip[:,B]
+        X[Nq + Nv:Nq + Nv + Nw] = qwdot
+
+        #accélération
+        if accel and Nw > 0:
+            qwddot = np.zeros(Nw, dtype=float)
+            if abs(phi_w_tip[:,B]) > 1e-12:
+                qwddot[B] = wdotdot_tip / phi_w_tip[:,B]
+            qddot[Nv:Nv + Nw] = qwddot
+        
+        '''TORSION'''
+        # déplacement
+        qa = np.zeros(Nalpha, dtype=float)
+        if abs(phi_a_tip[:,T]) > 1e-12:
+            qa[T] = alpha_tip / phi_a_tip[:,T]
+        X[Nv + Nw:Nv + Nw + Nalpha] = qa
+
+        # vitesse
+        qadot = np.zeros(Nalpha, dtype=float)
+        if abs(phi_a_tip[:,T]) > 1e-12:
+            qadot[T] = alphadot_tip / phi_a_tip[:,T]
+        X[Nq + Nv + Nw:Nq + Nv + Nw + Nalpha] = qadot
+    
+        #accélération
+        if accel and Nalpha > 0:
+            qaddot = np.zeros(Nalpha, dtype=float)
+            if abs(phi_a_tip[:,T]) > 1e-12:
+                qaddot[T] = alphadotdot_tip / phi_a_tip[:,T]
+            qddot[Nv + Nw:Nv + Nw + Nalpha] = qaddot
+
+
+    if accel:
+        return X, qddot
+    return X
 
 def X_to_q(par, X, t):
     '''
@@ -453,20 +556,18 @@ def X_to_q(par, X, t):
     nt = t.size
 
     # Récupération des coordonnées modales depuis X
-    Nv = par.Nv
-    Nw = par.Nw
-    Na = par.Nalpha
-    n_q = X.shape[1] // 2
-    Q = X[:, :n_q] # we only take the deplacement coordinates
+    Nq = par.Nq
+    # Nq = X.shape[1] // 2
+    Q = X[:, :Nq] # we only take the deplacement coordinates
 
-    i_w0, i_w1 = Nv, Nv + Nw
-    i_a0, i_a1 = i_w1, i_w1 + Na
-    qw_t = Q[:, i_w0:i_w1] if Nw > 0 else np.zeros((nt, 0))
-    qa_t = Q[:, i_a0:i_a1] if Na > 0 else np.zeros((nt, 0))
+    i_w0, i_w1 = par.Nv, par.Nv + par.Nw
+    i_a0, i_a1 = i_w1, i_w1 + par.Na
+    qw_t = Q[:, i_w0:i_w1] if par.Nw > 0 else np.zeros((nt, 0))
+    qa_t = Q[:, i_a0:i_a1] if par.Na > 0 else np.zeros((nt, 0))
 
     return qw_t, qa_t
 
-def _modal_to_physical_fields(par, qw_t, qa_t, return_shapes=False):
+def gen_coord_to_physical(par, q_w, q_a, return_shapes=False):
     """
     Convertit les coordonnées modales (qw, qa) en champs physiques w(y,t), alpha(y,t).
     EN TEMPOREL
@@ -498,8 +599,8 @@ def _modal_to_physical_fields(par, qw_t, qa_t, return_shapes=False):
     Nalpha = par.Nalpha
 
     # Garantir 2D (nt, N*)
-    qw_t = np.atleast_2d(qw_t)
-    qa_t = np.atleast_2d(qa_t)
+    q_w = np.atleast_2d(q_w)
+    q_a = np.atleast_2d(q_a)
 
     # Récupère et empile les formes modales
     phi_w, _, _ = bendingModeShapes(par)      # liste de Nw vecteurs (Ny,)
@@ -510,12 +611,58 @@ def _modal_to_physical_fields(par, qw_t, qa_t, return_shapes=False):
     Phi_a = np.vstack(phi_a)
 
     # Champs physiques
-    w_map = qw_t @ Phi_w
-    alpha_map = qa_t @ Phi_a
+    w_map = q_w @ Phi_w
+    alpha_map = q_a @ Phi_a
 
     if return_shapes:
         return w_map, alpha_map, Phi_w, Phi_a
     return w_map, alpha_map
+
+def gen_coord_to_physical_all(par,q_w, q_a,
+                              qdot_w=None, qdot_a=None,
+                              qdotdot_w=None, qdotdot_a=None):
+    """
+    Convertit les coordonnées modales (q_w, q_a) (t) en champs physiques w(y,t), alpha(y,t) et leurs dérivées temporelles.
+
+    Paramètres
+    ----------
+    par : ModelParameters
+        Doit fournir y, Nw, Nalpha.
+    q_w : ndarray (nt, Nw)
+        Coordonnées modales en flexion.
+    q_a : ndarray (nt, Nalpha)
+        Coordonnées modales en torsion.
+    qdot_w : ndarray (nt, Nw), optionnel
+        Vitesses modales en flexion.
+    qdot_a : ndarray (nt, Nalpha), optionnel
+        Vitesses modales en torsion.
+    qdotdot_w : ndarray (nt, Nw), optionnel
+        Accélérations modales en flexion.
+    qdotdot_a : ndarray (nt, Nalpha), optionnel
+        Accélérations modales en torsion.
+
+    Retours
+    -------
+    w_map : ndarray (nt, Ny)
+    alpha_map : ndarray (nt, Ny)
+    wdot_map : ndarray (nt, Ny) ou None
+    alphadot_map : ndarray (nt, Ny) ou None
+    wdotdot_map : ndarray (nt, Ny) ou None
+    alphadotdot_map : ndarray (nt, Ny) ou None
+    """
+    w_map, alpha_map = gen_coord_to_physical(par, q_w, q_a)
+
+    wdot_map = None
+    alphadot_map = None
+    if qdot_w is not None and qdot_a is not None:
+        wdot_map, alphadot_map = gen_coord_to_physical(par, qdot_w, qdot_a)
+
+    wdotdot_map = None
+    alphadotdot_map = None
+    if qdotdot_w is not None and qdotdot_a is not None:
+        wdotdot_map, alphadotdot_map = gen_coord_to_physical(par, qdotdot_w, qdotdot_a)
+
+    return w_map, alpha_map, wdot_map, alphadot_map, wdotdot_map, alphadotdot_map
 
 def _reconstruct_shapes_from_eigvecs(par, eigvals, eigvecs):
     """
@@ -1048,6 +1195,96 @@ def TheodoresenAeroModel(par,U,omega):
 
     return Ka, Ca, Ma
 
+def computeLiftMoment(par,U,w,alpha,wdot,alphadot,wdotdot,alphadotdot,omega):
+    """
+    Compute the unsteady lift and moment using the Theodorsen model with the Cooper-Wright notation.
+    It returns L(t) and M(t) given the current state and its derivatives.
+
+    the values of L and M are for a given y, not along the whole span
+
+    PARAMETERS
+    ---------------
+    par : object
+        Aerodynamic parameters (uses `rho_air`, `c`, `dCL`, `dCM`, `a`).
+    U : float
+        Freestream velocity (m/s).
+    w : float
+        Plunge displacement (m).
+    alpha : float
+        Pitch angle (rad).
+    wdot : float
+        Plunge velocity (m/s).
+    alphadot : float
+        Pitch angular velocity (rad/s).
+    wdotdot : float
+        Plunge acceleration (m/s²).
+    alphadotdot : float
+        Pitch angular acceleration (rad/s²).
+
+
+    RETURNS
+    ---------------
+    L : float
+        Unsteady lift force (N).
+    M : float
+        Unsteady moment (N·m).
+    """
+
+    if U!=0:
+        k = par.airfoil.b * omega / U
+        L_w_dot_dot, L_w_dot, L_w, L_alpha_dot_dot, L_alpha_dot, L_alpha, M_w_dot_dot, M_w_dot, M_w, M_alpha_dot_dot, M_alpha_dot, M_alpha = CooperWrightNotation(par,k)
+        L = par.rho_air*U**2*(L_w*w + L_w_dot*par.airfoil.b*wdot/U + L_w_dot_dot*(par.airfoil.b**2)*wdotdot/(U**2) + L_alpha*par.airfoil.b*alpha + L_alpha_dot*(par.airfoil.b**2)*alphadot/U + L_alpha_dot_dot*(par.airfoil.b**3)*alphadotdot/(U**2))
+        M = par.rho_air*U**2*par.airfoil.b*(M_w*w + M_w_dot*par.airfoil.b*wdot/U + M_w_dot_dot*(par.airfoil.b**2)*wdotdot/(U**2) + M_alpha*par.airfoil.b*alpha + M_alpha_dot*(par.airfoil.b**2)*alphadot/U + M_alpha_dot_dot*(par.airfoil.b**3)*alphadotdot/(U**2))
+    else:
+        L = 0
+        M = 0
+    return L, M
+
+def power_work_computations(par,L,M,wdot_map,alphadot_map,t,omega_ref,
+                            t0 = 0):
+    '''
+    Compute the power of the aerodynamic forces over time and span.
+    Compute also the work done over a period T.
+
+    PARAMETERS
+    ---------------
+    par : object
+        Wing parameters with `y` spanwise locations.
+    L : np.ndarray
+        Unsteady lift distribution over time and span (shape `nt x Ny`).
+    M : np.ndarray
+        Unsteady moment distribution over time and span (shape `nt x Ny`).
+    wdot_map : np.ndarray
+        Plunge velocity distribution over time and span (shape `nt x Ny`).
+    alphadot_map : np.ndarray
+        Pitch angular velocity distribution over time and span (shape `nt x Ny`).
+    t : np.ndarray
+        Time vector (shape `nt`,).
+    omega_ref : float
+        Reference angular frequency (rad/s) to compute T
+    '''
+    # we compute the power p_w = L * wdot, p_a = M * alphadot
+    p_w = L * wdot_map  # power from bending forces : p_w(y,t) = f_w(y,t) * wdot(y,t)
+    p_a = M * alphadot_map  # power from torsional forces : p_a(y,t) = m_a(y,t) * alphadot(y,t)
+    p = p_w + p_a
+
+    E_w = np.zeros(par.y.shape)
+    E_a = np.zeros(par.y.shape)
+    E = np.zeros(par.y.shape)
+    T_period = 1/ (omega_ref/(2*np.pi))
+    # t0=0 # to avoid initial transient
+    for i in range(len(par.y)):
+        yi = par.y[i]
+        p_a_yi = p_a[:,i]
+        p_w_yi = p_w[:,i]
+        p_yi = p[:,i]
+        # we integrate over a period
+        mask_time = (t >= t0) & (t <= t0 + T_period)
+        E_w[i] = np.trapezoid(p_w_yi[mask_time], t[mask_time])
+        E_a[i] = np.trapezoid(p_a_yi[mask_time], t[mask_time])
+        E[i] = np.trapezoid(p_yi[mask_time], t[mask_time])
+    return p_w, p_a, p, E_w, E_a, E
+
 ''' Eigenvalue problem and modal parameters extraction '''
 
 ''' At rest '''
@@ -1279,7 +1516,7 @@ def ModalParamDyn(par, tracked_idx=(0,1,2,3), compute_shapes=False, compute_ener
 
         # keep omega ref near the followed modes (updating the reduced frequency for Theodorsen model)
         # previous_omega = float(np.mean(w[list(tracked_idx)]))
-        previous_omega = float(w[k_list[1]]+w[k_list[2]])/2
+        previous_omega = float(w[k_list[0]]+w[k_list[1]])/2
         '''
         the problem is that sometimes both frequenties approach 0 so then the k=omega b/U is also 0 and Theodorsen model is not valid anymore
         '''
@@ -1458,8 +1695,8 @@ def integrate_state_rk(par, U, t, x0=None, omega_ref=None, return_A=True, rk_ord
         raise ValueError("t should be a 1D vector.")
 
     # Dimension d'état: 2(Nw+Nalpha)
-    n_q = int(par.Nv + par.Nw + par.Nalpha)
-    n_x = 2 * n_q
+    Nq = par.Nq
+    n_x = 2 * Nq
 
     # Etat initial
     if x0 is None:
@@ -1577,8 +1814,8 @@ def plot_w_alpha_fields(par, t, X, U = None, times_to_plot=None, cmap='viridis',
     Nv = par.Nv
 
     # Slices des coordonnées modales dans q
-    n_q = X.shape[1] // 2
-    Q = X[:, :n_q]  # (nt, Nv+Nw+Nalpha)
+    Nq = X.shape[1] // 2
+    Q = X[:, :Nq]  # (nt, Nv+Nw+Nalpha)
     i_w0 = Nv
     i_w1 = Nv + Nw
     i_a0 = i_w1
@@ -1588,7 +1825,7 @@ def plot_w_alpha_fields(par, t, X, U = None, times_to_plot=None, cmap='viridis',
     qa_t = Q[:, i_a0:i_a1]
 
     # Mapping modal -> champs
-    w_map, a_map = _modal_to_physical_fields(par, qw_t, qa_t)
+    w_map, a_map = gen_coord_to_physical(par, qw_t, qa_t)
 
     # Choix des instants pour coupes
     if times_to_plot is None:
@@ -1692,7 +1929,7 @@ def plot_tip_time_and_fft(par, t, X, detrend=True, U=None, window=True, zero_pad
     qw_t, qa_t = X_to_q(par = par, X=X, t=t)
 
     # Mapping modal -> champs physiques sur l'envergure
-    w_map, a_map = _modal_to_physical_fields(par, qw_t, qa_t)  # renvoie w(y,t) alpha(y,t)
+    w_map, a_map = gen_coord_to_physical(par, qw_t, qa_t)  # renvoie w(y,t) alpha(y,t)
 
     # puis on prend les valeurs temporelles en bout d'aile [tip_idx]
     # Extraction au bout (y=s) = dernier point de par.y
