@@ -2,6 +2,7 @@
 from cProfile import label
 import os
 from re import L
+from tkinter import font
 import numpy as np
 import json
 
@@ -25,7 +26,7 @@ mpl.rcParams.update({
 with open("colors_set.json", "r") as f:
     colors_set = json.load(f)
 
-figsize = (5.5,4)  # Taille des figures (format article)
+# figsize = (5.5,4)  # Taille des figures (format article)
 
 ''' FREQ & DAMPING PLOTTING FUNCTIONS '''
 
@@ -89,7 +90,7 @@ def plot_modal_data_single(f,
         colors = colors
     else:
         colors = base_colors[:n_modes] if len(base_colors) >= n_modes else [f"C{i}" for i in range(n_modes)]
-    mode_labels = [fr"$\psi^{{{j+1}}}$" for j in range(n_modes)]
+    mode_labels = [fr"$v^{{{j+1}}}$" for j in range(n_modes)]
 
     # Figure
     fig, ax = plt.subplots(2, 1, sharex=True, constrained_layout=True, figsize=figsize)
@@ -107,7 +108,7 @@ def plot_modal_data_single(f,
     for j in range(n_modes):
         ax[1].plot(U, z[:, j], color=colors[j], linestyle=linestyle, lw=1.2, label=mode_labels[j])
 
-    ax[1].set_xlabel(r'$U$ [$m/s$]')
+    ax[1].set_xlabel(r'$U[\mathrm{m}.\mathrm{s}^{-1}$]')
     ax[1].set_ylabel(r'$\zeta$')
     ax[1].grid(True, linewidth=0.3, alpha=0.5)
     ax[1].legend(frameon=False, ncols=min(4, n_modes))
@@ -217,8 +218,8 @@ def plot_modal_data_two(fa,
         ax[1].plot(U, za[:, j], color=colors[j % len(colors)], linestyle=style_a, lw=1.2, label=f"{mode_labels[j]} - {la}")
         ax[1].plot(U, zb[:, j], color=colors[j % len(colors)], linestyle=style_b, lw=1.2, label=f"{mode_labels[j]} - {lb}")
 
-    ax[1].set_xlabel('U [m/s]')
-    ax[1].set_ylabel('zeta [-]')
+    ax[1].set_xlabel(r'$U [\mathrm{m}.\mathrm{s}^{-1}]$')
+    ax[1].set_ylabel(r'$\zeta [-]$')
     ax[1].grid(True, linewidth=0.3, alpha=0.5)
     ax[1].legend(frameon=False, ncols=2)
 
@@ -293,13 +294,16 @@ def plot_vi(vi: np.ndarray,
             normalize: Optional[str] = None,# None | 'max' | 'l2'
             align_phase: bool = False,
             ref_idx: Optional[int] = None,
-            figsize: Tuple[int, int] = (9, 4),
+            figsize: Optional[Tuple[float, float]] = None,
             bending_label: str = 'vw (bending)',
             torsion_label: str = 'va (torsion)',
             ax: Optional[plt.Axes] = None,  # NEW: draw into an existing axis
             save: bool = False,
             filename: str = 'vi'
 ):
+    
+    if figsize is None:
+        figsize = (7, 2.25)
     vi = np.asarray(vi).reshape(-1)
     assert vi.size == Nw + Nalpha, "vi must have length Nw+Nalpha"
     v_plot = vi.copy()
@@ -349,7 +353,7 @@ def plot_vi(vi: np.ndarray,
     # Single-axis variants
     created_fig = False
     if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=figsize, constrained_layout=True)
+        fig, ax = plt.subplots(1, 1, figsize=(7, 2), constrained_layout=True)
         created_fig = True
 
     idx_w = np.arange(Nw)
@@ -360,7 +364,7 @@ def plot_vi(vi: np.ndarray,
         # ax.bar(idx_a, np.abs(va), color="#A200FF", label=torsion_label)
         ax.bar(idx_w, np.abs(vw), color=colors_set['strong_blue'], label=bending_label)
         ax.bar(idx_a, np.abs(va), color = colors_set['strong_purple'], label=torsion_label)
-        ax.set_ylabel("$|\psi^i_{\_,j}|$")
+        ax.set_ylabel(r"$|v^i_{\_,j}|$")
         ax.set_title("Modal coefficients (magnitude)")
     elif kind == 'real_imag':
         width = 0.38
@@ -375,7 +379,7 @@ def plot_vi(vi: np.ndarray,
         raise ValueError("kind must be 'abs', 'real_imag', or 'mag_phase'")
 
     ax.set_xticks(np.arange(Nw + Nalpha))
-    ax.set_xticklabels([fr"$\psi_{{w,{k+1}}}$" for k in range(Nw)] + [rf"$\psi_{{\alpha,{k+1}}}$" for k in range(Nalpha)])
+    ax.set_xticklabels([fr"$v_{{w,{k+1}}}$" for k in range(Nw)] + [rf"$v_{{\alpha,{k+1}}}$" for k in range(Nalpha)])
     ax.grid(True, linewidth=0.3, alpha=0.5)
 
     if created_fig:
@@ -407,8 +411,8 @@ def plot_vi_grid(Vq: np.ndarray, Nw: int, Nalpha: int,
                  show: bool = True,
                  save: bool = False,
                  filename: str = 'vi_grid',
-                 bending_label: str = r'$\psi_{w,j}$',
-                 torsion_label: str = r'$\psi_{\alpha,j}$',
+                 bending_label: str = r'$v_{w,j}$',
+                 torsion_label: str = r'$v_{\alpha,j}$',
 ):
     Vq = np.asarray(Vq)
     assert Vq.shape[0] == Nw + Nalpha, "Vq must have Nw+Nalpha rows"
@@ -422,7 +426,7 @@ def plot_vi_grid(Vq: np.ndarray, Nw: int, Nalpha: int,
     n_modes = len(sel_modes)
 
     if figsize is None:
-        figsize = (max(5.0, 3.0 * n_modes), 3.2)
+        figsize = (max(5.0, 3.0 * n_modes), 2)
 
     fig, axes = plt.subplots(1, n_modes, sharey=sharey, figsize=figsize, constrained_layout=True)
     if n_modes == 1:
@@ -440,7 +444,7 @@ def plot_vi_grid(Vq: np.ndarray, Nw: int, Nalpha: int,
             torsion_label=torsion_label,
             ax=ax,  # reuse single-axis variant
         )
-        title = f"Mode {jm+1} : $\psi^{{{jm+1}}}$"
+        title = f"Mode {jm+1} : $v^{{{jm+1}}}$"
         if freqs_hz is not None:
             title += f" (f={float(freqs_hz[jm]):.2f} Hz)"
         ax.set_title(title)
@@ -559,7 +563,7 @@ def plot_vi_grid_over_U(U: np.ndarray,Vq_U: np.ndarray,
                 except Exception:
                     pass
             if c == 0:
-                ax.set_ylabel(f"U={U[iu]:.2f} m/s")
+                ax.set_ylabel(rf"$U={U[iu]:.2f} \mathrm{{m}}.\mathrm{{s}}^{-1}$")
             # X-ticks only on bottom row
             if r < n_rows - 1:
                 ax.set_xticklabels([])
@@ -646,7 +650,7 @@ def plot_vi_contribution_over_U(U: np.ndarray,
     # Plot
     fig, ax = plt.subplots(1, 1, figsize=figsize, constrained_layout=True)
     ax.plot(U, ratios, color='tab:blue')
-    ax.set_xlabel('U [m/s]')
+    ax.set_xlabel(r'$U [\mathrm{m}.\mathrm{s}^{-1}]$')
     ax.set_ylabel(r'$|\mathbf{v}_w| / |\mathbf{v}_a|$')
     
     title = r"Relative bending-torsion contribution ($|\mathbf{v}_w|/|\mathbf{v}_a|$)"+f" - Mode {mi+1}"
@@ -696,7 +700,7 @@ def plot_vi_wa_phase_over_U(par, U, phase_w_a_list, idx_modes=None, save: bool =
         phase_w_a = np.asarray(phase_w_a).ravel()
         ax.plot(U, phase_w_a, '-', lw=1.3, color=color, label=rf'Mode {mode_idx+1}')
 
-    ax.set_xlabel('U [m/s]')
+    ax.set_xlabel(r'$U [\mathrm{m}.\mathrm{s}^{-1}]$')
     ax.set_ylabel(r'Phase angle $\theta_w$ [rad]')
     ax.grid(True, linewidth=0.3, alpha=0.5)
     ax.set_ylim(-np.pi - 0.2, np.pi + 0.2)
@@ -709,7 +713,91 @@ def plot_vi_wa_phase_over_U(par, U, phase_w_a_list, idx_modes=None, save: bool =
         os.makedirs('images', exist_ok=True)
         fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
     plt.show()
-   
+
+''' w(y), alpha(y) plotting functions '''
+
+def plot_w_alpha_fields(par, t, w_map, a_map, U = None, times_to_plot=None, cmap='viridis', return_maps=False):
+    """
+    Reconstruit et trace w(y,t) et alpha(y,t) à partir de l'état X(t).
+    Suppose q = [qv (optionnel), qw (Nw), qa (Nalpha)] puis [vitesse...].
+
+    Paramètres
+    ----------
+    par : ModelParameters
+        Doit fournir y, Nw, Nalpha, (optionnellement Nv).
+    t : ndarray (nt,)
+        Temps utilisés lors de l'intégration.
+    w_map : ndarray (nt, Ny)
+        Champ w(y,t) à tracer.
+    a_map : ndarray (nt, Ny)
+        Champ alpha(y,t) à tracer.
+    times_to_plot : list[float] ou None
+        Instants sélectionnés pour coupes w(y, t_i) et alpha(y, t_i). Si None, choisi 4 instants.
+    cmap : str
+        Colormap pour les cartes temps-envergure.
+    return_maps : bool
+        Si True, retourne aussi (w_map, alpha_map) de taille (nt, Ny).
+
+    Retours
+    -------
+    (optionnel) w_map : ndarray (nt, Ny), alpha_map : ndarray (nt, Ny)
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    t = np.asarray(t, dtype=float)
+    nt = t.size
+
+    Nw = par.Nw
+    Nalpha = par.Nalpha
+    Nv = par.Nv
+
+    # Choix des instants pour coupes
+    if times_to_plot is None:
+        # 4 instants répartis (début/extrémités incluses)
+        idx = np.linspace(0, nt - 1, 4, dtype=int)
+    else:
+        times_to_plot = np.asarray(times_to_plot, dtype=float)
+        # projection aux indices les plus proches
+        idx = np.array([np.argmin(np.abs(t - ti)) for ti in times_to_plot], dtype=int)
+
+    # Figures
+    fig, axes = plt.subplots(2, 2, figsize=(12, 6), constrained_layout=True)
+    if U>=0: # si U = None alors ça renvoie False par défaut
+        fig.suptitle(f'U = {U} m/s')
+    # Cartes temps–envergure
+    im0 = axes[0, 0].imshow(w_map, aspect='auto', origin='lower',
+                            extent=[par.y[0], par.y[-1], t[0], t[-1]], cmap=cmap)
+    axes[0, 0].set_title("w(y,t)")
+    axes[0, 0].set_xlabel("y")
+    axes[0, 0].set_ylabel("t")
+    plt.colorbar(im0, ax=axes[0, 0], label='w')
+
+    im1 = axes[1, 0].imshow(a_map, aspect='auto', origin='lower',
+                            extent=[par.y[0], par.y[-1], t[0], t[-1]], cmap=cmap)
+    axes[1, 0].set_title("alpha(y,t)")
+    axes[1, 0].set_xlabel("y")
+    axes[1, 0].set_ylabel("t")
+    plt.colorbar(im1, ax=axes[1, 0], label='alpha')
+
+    # Coupes w(y, t_i)
+    for j in idx:
+        axes[0, 1].plot(par.y, w_map[j, :], label=f"t={t[j]:.3g}")
+    axes[0, 1].set_title("Coupes w(y, t_i)")
+    axes[0, 1].set_xlabel("y")
+    axes[0, 1].set_ylabel("w")
+    axes[0, 1].legend(loc='best')
+
+    # Coupes alpha(y, t_i)
+    for j in idx:
+        axes[1, 1].plot(par.y, a_map[j, :], label=f"t={t[j]:.3g}")
+    axes[1, 1].set_title("Coupes alpha(y, t_i)")
+    axes[1, 1].set_xlabel("y")
+    axes[1, 1].set_ylabel("alpha")
+    axes[1, 1].legend(loc='best')
+
+    plt.show()
+
 # this one is not used anymore
 def plot_mode_shapes_grid(y, freqs_hz, W=None, ALPHA=None,extras=None,normalize=False,colors=None,styles=None,sharey=True,figsize=None,suptitle=None,show=True, save: bool = False, filename: str = 'nonfichier'):
     '''
@@ -1009,7 +1097,7 @@ def plot_mode_shapes_grid_over_U(y, U, WU=None, ALPHAU=None, f_modes_U=None,
             if r == 0:
                 ax.set_title(f"Mode {kmode+1}")
             if c == 0:
-                ax.set_ylabel(f"U = {Uval:.2f} m/s")
+                ax.set_ylabel(rf"$U = {Uval:.2f} \mathrm{{m}}.\mathrm{{s}}^{-1}")
             if r == n_rows - 1:
                 ax.set_xlabel("y [m]")
 
@@ -1047,6 +1135,7 @@ def plot_mode_shapes_grid_over_U(y, U, WU=None, ALPHAU=None, f_modes_U=None,
 '''POWER, ENERGY, ETC. PLOTS'''
 
 def plot_aero_work_distribution(par, U, E_w, E_a, E,
+                                suptitle: Optional[str] = None,
                                 save: bool = False,
                                 filename: str = 'aero_work_distribution'):
     '''
@@ -1068,10 +1157,10 @@ def plot_aero_work_distribution(par, U, E_w, E_a, E,
     -------
     None
     '''    
-    fig, ax = plt.subplots(constrained_layout=True)
-    ax.plot(E_w, par.y, lw=1, color = colors_set['strong_blue'],  label='Bending contribution')
-    ax.plot(E_a, par.y, lw=1, color = colors_set['strong_purple'], label='Torsion contribution')
-    ax.plot(E, par.y, lw=2, color='k', label='Total work')
+    fig, ax = plt.subplots(constrained_layout=True, figsize=(6, 4))
+    ax.plot(E_w, par.y, lw=1, color = colors_set['strong_blue'],  label=r'bending work')
+    ax.plot(E_a, par.y, lw=1, color = colors_set['strong_purple'], label=r'borsion work')
+    ax.plot(E, par.y, lw=2, color='k', label='total work')
     
 
     # Positive side (right)
@@ -1094,11 +1183,11 @@ def plot_aero_work_distribution(par, U, E_w, E_a, E,
     donc on doit créer un "faux objet graphique" juste pour la légende
     '''
     positive_patch = mpatches.Patch(color=colors_set['light_green'], 
-                                    label='Positive work', 
+                                    label=r'work $> 0$', 
                                     alpha=0.7)
 
     negative_patch = mpatches.Patch(color=colors_set['light_red'], 
-                                    label='Negative work', 
+                                    label=r'work $< 0$', 
                                     alpha=0.7)
 
 
@@ -1106,20 +1195,96 @@ def plot_aero_work_distribution(par, U, E_w, E_a, E,
     ax.set_xlim((-max(np.abs(E)*1.3),max(np.abs(E)*1.3)))
     ax.set_xlabel('Work of aerodynamic forces on a period [J]')
     ax.set_ylabel('Spanwise location y [m]')
-    ax.set_title(f'Work done by aerodynamic forces along the span at U = {U} m/s on a period')
     ax.grid(True, linewidth=0.3, alpha=0.5)
 
     # Fusion des légendes
     handles, labels = ax.get_legend_handles_labels()
     handles += [positive_patch, negative_patch]
 
-    ax.legend(handles=handles)
+    ax.legend(handles=handles,fontsize=8)
+
+    if suptitle:
+        fig.suptitle(suptitle)
 
     if save:
         os.makedirs('images', exist_ok=True)
         fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
     plt.show()
-    
+
+def _plot_aero_work_on_ax(ax, par, U, E_w, E_a, E, show_labels=True, show_legend=True):
+    ax.plot(E_w, par.y, lw=1, color=colors_set['strong_blue'],  label=r'bending work')
+    ax.plot(E_a, par.y, lw=1, color=colors_set['strong_purple'], label=r'torsion work')
+    ax.plot(E, par.y, lw=2, color='k', label='total work')
+
+    mask_pos = E > 0
+    mask_neg = E < 0
+
+    ax.fill_betweenx(par.y, 0, E,
+                     where=mask_pos,
+                     color=colors_set['light_green'],
+                     alpha=0.7,
+                     interpolate=True)
+
+    ax.fill_betweenx(par.y, 0, E,
+                     where=mask_neg,
+                     color=colors_set['light_red'],
+                     alpha=0.7,
+                     interpolate=True)
+
+    # Patches pour la légende
+    positive_patch = mpatches.Patch(color=colors_set['light_green'],
+                                    label=r'work $> 0$',
+                                    alpha=0.7)
+
+    negative_patch = mpatches.Patch(color=colors_set['light_red'],
+                                    label=r'work $< 0$',
+                                    alpha=0.7)
+
+    ax.vlines(0, ymin=0, ymax=par.s, colors='k', linestyles='--', lw=0.8)
+    ax.set_xlim((-max(np.abs(E)*1.3), max(np.abs(E)*1.3)))
+    ax.grid(True, linewidth=0.3, alpha=0.5)
+
+    if show_labels:
+        ax.set_xlabel('Work of aerodynamic forces on a period [J]')
+        ax.set_ylabel('Spanwise location y [m]')
+    else:
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+
+    if show_legend:
+        handles, labels = ax.get_legend_handles_labels()
+        handles += [positive_patch, negative_patch]
+        ax.legend(handles=handles, fontsize=9, loc ='best')    
+
+def plot_two_aero_work_distributions(par, 
+                                      U1, E_w1, E_a1, E1,
+                                      U2, E_w2, E_a2, E2,
+                                      suptitle: Optional[str] = None,
+                                      save=False,
+                                      filename="aero_work_distribution_double"):
+
+    fig, axs = plt.subplots(1, 2, figsize=(7, 3), constrained_layout=True)
+
+    # Graphe de gauche : avec labels + légende
+    _plot_aero_work_on_ax(axs[0], par, U1, E_w1, E_a1, E1,
+                          show_labels=True,
+                          show_legend=True)
+
+    # Graphe de droite : sans labels, sans légende
+    _plot_aero_work_on_ax(axs[1], par, U2, E_w2, E_a2, E2,
+                          show_labels=False,
+                          show_legend=False)
+    axs[1].set_xlabel('Work of aerodynamic forces on a period [J]')
+
+    if suptitle is not None:
+        fig.suptitle(suptitle)
+
+    if save:
+        os.makedirs('images', exist_ok=True)
+        fig.savefig(os.path.join('images', f"{filename}.pdf"), bbox_inches='tight')
+
+    plt.show()
+
 
 ''' ANIMATION PLOTS'''
 def animate_beam(par,t,X,U=None,n_stations=15,interval=30,

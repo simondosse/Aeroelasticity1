@@ -1240,7 +1240,44 @@ def computeLiftMoment(par,U,w,alpha,wdot,alphadot,wdotdot,alphadotdot,omega):
         M = 0
     return L, M
 
-def power_work_computations(par,L,M,wdot_map,alphadot_map,t,omega_ref,
+def computeLiftMoment_along_span(par, U, w_map, alpha_map, wdot_map, alphadot_map, wdotdot_map, alphadotdot_map, t, omega):
+    '''
+    Compute the unsteady lift and moment distributions along the span and over time.
+    It calls `computeLiftMoment` that computes L(yi,t) and M(yi,t) at a given spanwise location yi.
+    We loop over all spanwise locations to get the full distributions over time and span.
+
+    PARAMETERS
+    ---------------
+    par : object
+        Wing parameters with `y` spanwise locations.
+    U : float
+        Freestream velocity (m/s).
+    w_map : np.ndarray
+        Plunge displacement distribution over time and span (shape `nt x Ny`)
+    alpha_map : np.ndarray
+        Pitch angle distribution over time and span (shape `nt x Ny`).
+    ...
+
+    RETURNS
+    ---------------
+    L : np.ndarray
+        Unsteady lift distribution over time and span (shape `nt x Ny`).
+    M : np.ndarray
+        Unsteady moment distribution over time and span (shape `nt x Ny`).
+    '''
+    L = np.zeros((len(t),len(par.y)))
+    M = np.zeros((len(t),len(par.y)))
+    for i in range(len(par.y)):
+        w = w_map[:,i] # all the time steps at a given spanwise location
+        alpha = alpha_map[:,i]
+        wdot = wdot_map[:,i]
+        alphadot = alphadot_map[:,i]
+        wdotdot = wdotdot_map[:,i]
+        alphadotdot = alphadotdot_map[:,i]
+        L[:,i], M[:,i] = computeLiftMoment(par = par,U = U, w=w, alpha=alpha, wdot=wdot, alphadot=alphadot, wdotdot=wdotdot, alphadotdot=alphadotdot, omega=omega)
+    return L, M
+
+def power_work_computations(par,L,M,wdot_map,alphadot_map,t,omega,
                             t0 = 0):
     '''
     Compute the power of the aerodynamic forces over time and span.
@@ -1264,14 +1301,15 @@ def power_work_computations(par,L,M,wdot_map,alphadot_map,t,omega_ref,
         Reference angular frequency (rad/s) to compute T
     '''
     # we compute the power p_w = L * wdot, p_a = M * alphadot
-    p_w = L * wdot_map  # power from bending forces : p_w(y,t) = f_w(y,t) * wdot(y,t)
+    p_w = -L * wdot_map  # power from bending forces : p_w(y,t) = f_w(y,t) * wdot(y,t)
+    # the negative sign is because lift is due to the way we defined the positive direction of w
     p_a = M * alphadot_map  # power from torsional forces : p_a(y,t) = m_a(y,t) * alphadot(y,t)
     p = p_w + p_a
 
     E_w = np.zeros(par.y.shape)
     E_a = np.zeros(par.y.shape)
     E = np.zeros(par.y.shape)
-    T_period = 1/ (omega_ref/(2*np.pi))
+    T_period = 1/ (omega/(2*np.pi))
     # t0=0 # to avoid initial transient
     for i in range(len(par.y)):
         yi = par.y[i]
@@ -1775,7 +1813,7 @@ def integrate_state_rk(par, U, t, x0=None, omega_ref=None, return_A=True, rk_ord
 
 ''' Plot functions '''
 
-def plot_w_alpha_fields(par, t, X, U = None, times_to_plot=None, cmap='viridis', return_maps=False):
+def plot_w_alpha_fields_from_X(par, t, X, U = None, times_to_plot=None, cmap='viridis', return_maps=False):
     """
     Reconstruit et trace w(y,t) et alpha(y,t) à partir de l'état X(t).
     Suppose q = [qv (optionnel), qw (Nw), qa (Nalpha)] puis [vitesse...].
@@ -1875,7 +1913,10 @@ def plot_w_alpha_fields(par, t, X, U = None, times_to_plot=None, cmap='viridis',
 
     if return_maps:
         return w_map, a_map
+
+
     
+
 def plot_tip_time_and_fft(par, t, X, detrend=True, U=None, window=True, zero_pad=1, freq_max=None, return_data=False):
     """
     Trace w(y=s,t) et alpha(y=s,t) + leurs FFT (Hz) en disposition 2x2:

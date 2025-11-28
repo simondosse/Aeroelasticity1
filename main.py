@@ -5,6 +5,7 @@ from cProfile import label
 from fileinput import filename
 import os
 from pyexpat import model
+import time
 from turtle import mode
 from matplotlib.pylab import eig
 import numpy as np
@@ -15,11 +16,13 @@ import plotter
 import NACA
 from _functions_AS_optim import *
 
+import copy
+
 from data_manager import save_modal_data, _load_npz
 from scipy.linalg import eigh
 
 
-#%%_________________CAS IAT________________________________
+#%%___________________________IAT WING__________________________
 
 ''' Structural parameters '''
 s=1.5 # span
@@ -65,14 +68,26 @@ model_iat.airfoil.plot_naca00xx_section()
 model_iat.Umax=35
 model_iat.Ustep=100
 
-plotter.plot_params_table(model_iat, save = True, filename='model_iat_params_table')
+# plotter.plot_params_table(model_iat, save = True, filename='model_iat_params_table')
 f, damping,eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model_iat, tracked_idx=(0,1,2), track_using=None)
 Vq_U = eigvecs_U[:,:model_iat.Nq, :]
-plotter.plot_modal_data_single(f,damping,model_iat, suptitle='IAT wing model - Frequencies and damping evolution', figsize=(6,4))
 Uc, _ , status = ROM.obj_evaluation(U = model_iat.U, damping = damping[:,1], return_status=True)
 
-plotter.plot_vi_grid(Vq=Vq_U[0,:,:], Nw=model_iat.Nw, Nalpha=model_iat.Nalpha, freqs_hz=f[0,:], kind='abs', normalize='l2', sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
+model_iat.Vq_U = Vq_U
+model_iat.f = f
+model_iat.damping = damping
+model_iat.Uc = Uc
 
+plotter.plot_modal_data_single(f,damping,model_iat, suptitle='IAT wing model - Frequencies and damping evolution', figsize=(6,4))
+
+plotter.plot_vi_grid(Vq=Vq_U[0,:,:],
+                     Nw=model_iat.Nw, Nalpha=model_iat.Nalpha,
+                     freqs_hz=f[0,:], kind='abs', normalize='l2',
+                     sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
+plotter.plot_vi_grid(Vq=Vq_U[-1,:,:],
+                     Nw=model_iat.Nw, Nalpha=model_iat.Nalpha,
+                     freqs_hz=f[0,:], kind='abs', normalize='l2',
+                     sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
 plotter.plot_vi_grid_over_U(U=model_iat.U,
                             Vq_U=Vq_U,
                             Nw=model_iat.Nw,
@@ -83,7 +98,7 @@ plotter.plot_vi_grid_over_U(U=model_iat.U,
 
 
 
-#%% __________________________ULiege wing configuration__________________
+#%% __________________________ULiege WING_______________________
 save=False
 
 Mt = None
@@ -105,15 +120,22 @@ model_liege.airfoil.plot_naca00xx_section()
 model_liege.Umax=50
 model_liege.Ustep=150
 # model_liege.airfoil.Ialpha_EA = 2.587e-3
-model_liege.dCL=4
-model_liege.dCM=0.5
-plotter.plot_params_table(model_liege, save = True, filename='model_liege_params_table')
+model_liege.dCL=4   # 4 to get the same results as Maxime's paper
+model_liege.dCM=0.3 # 0.3 to get the same results as Maxime's paper
+# plotter.plot_params_table(model_liege, save = True, filename='model_liege_params_table')
 
 f, damping,eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model_liege, tracked_idx=(0,1,2), track_using=None)
 Vq_U = eigvecs_U[:,:model_liege.Nq, :]
 Uc, _ , status = ROM.obj_evaluation(U = model_liege.U, damping = damping[:,1], return_status=True)
-plotter.plot_modal_data_single(f,damping,model_liege,colors = ['tab:blue','tab:green','tab:orange'],suptitle='Liège wing model - Frequencies and damping evolution',
-                                figsize=(6,4),
+
+model_liege.Vq_U = Vq_U
+model_liege.f = f
+model_liege.damping = damping
+model_liege.Uc = Uc
+
+plotter.plot_modal_data_single(f,damping,model_liege,colors = ['tab:blue','tab:green','tab:orange'],#suptitle='Liège wing model - Frequencies and damping evolution',
+                            #figsize=(6,4),
+                                Uc = Uc,
                                save = save, filename='model_liege_ref') #
 
 plotter.plot_vi_grid(Vq=Vq_U[0,:,:], Nw=model_liege.Nw, Nalpha=model_liege.Nalpha, freqs_hz=f[0,:], kind='abs', normalize='l2', sharey=True, suptitle='Modal coefficients per mode',mode_indices=(0,1,2))
@@ -124,7 +146,7 @@ plotter.plot_vi_grid_over_U(U=model_liege.U,
                             f_modes_U=f_modes_U,
                             normalize = 'l2',
                             mode_indices=(0,1,2))
-#%%___________________________________________OPTIMAL WING____________________________________
+#%%___________________________OPTIMAL WING______________________
 
 algorithm_name = "DE"
 target_mode_idx=1
@@ -161,6 +183,13 @@ Vq = eigvecs0[:model.Nq, :]
 f, damping, eigvecs_U, f_modes_U, *_ = ROM.ModalParamDyn(model, tracked_idx=(0,1,2))
 Vq_U = eigvecs_U[:,:model.Nq, :]
 Uc, _ , status = ROM.obj_evaluation(U = model.U, damping = damping[:,target_mode_idx], return_status=True)
+model.Vq_U = Vq_U
+model.f = f
+model.damping = damping
+model.Uc = Uc
+
+
+
 # plotter.plot_modal_data_single(f, damping, model, suptitle=fr"$EI_x$ = {model.EIx:.1f}, $GJ$ = {model.GJ:.1f}, $x_{{ea}}$ = {model.airfoil.x_ea:.3f}, $x_{{cg}}$ = {model.airfoil.x_cg:.3f}, $U_c$ = {Uc:.1f}",
 #                                save = save, filename = f'modal_data_{target_mode_idx}')
 # plotter.plot_modal_data_single(f, damping, model, Uc = Uc, suptitle = 'Optimal wing model - Frequencies and damping evolution',
@@ -184,6 +213,7 @@ plotter.plot_vi_contribution_over_U(U = model.U,Vq_U = Vq_U, Nw=model.Nw, Nalpha
 # plot des contributions en w et alpha pour le mode instable à U = U[-1]
 plotter.plot_vi_grid(Vq=Vq_U[-1,:,:], Nw=model.Nw, Nalpha=model.Nalpha, freqs_hz=f0, kind='abs', normalize='l2', sharey=True,mode_indices=(0,1), # suptitle=rf"$U = {model.U[-1]} m/s$",
                      save = save, filename = f'vi_grid_Uc_{target_mode_idx}')
+
 
 
 plotter.plot_vi_grid_over_U(U=model.U,
@@ -211,9 +241,7 @@ plotter.plot_vi_grid_over_U(U=model.U,
 
 #%% ___________Temporal simulation and Work over the span______________________
 # model = model_iat
-t0 = 0
-tf = 2
-dt = 0.001
+t0, tf, dt = (0, 2, 0.001)
 t = np.arange(t0, tf+dt, dt)
 
 X0 = ROM.build_state_X_from_real(
@@ -222,7 +250,7 @@ X0 = ROM.build_state_X_from_real(
     alpha_tip=0.2,     # rad
     wdot_tip=0.0,
     alphadot_tip=0.0,
-    q_content={'bending':1, 'torsion':1}
+    q_content={'bending':1, 'torsion':0}
 ) # même si on veut simuler une réponse temporelle avec un U!=0 faut mettre un petit w0 ou aplha0 sinon tous les efforts symétriques s'annulent parfaitement
 '''
 the way we build X0 is very important, if we do X [q; qdot] such that q = pinv(phi_w1(y=s))*w0, q will be computed to minimize the norm of q,
@@ -248,7 +276,6 @@ omega_ref = 2*np.pi*(f_at_U[coupled_mode_idx[0]]+f_at_U[coupled_mode_idx[1]])*0.
 
 t,X,A = ROM.integrate_state_rk(par = model, U = U , t=t, x0 = X0, rk_order=4)
 # ROM.plot_tip_time_and_fft(par = model, t=t,X=X, U=U, detrend=True)
-
 
 
 # we got back to physical space for plotting
@@ -418,41 +445,39 @@ ax.grid(True, linewidth=0.3, alpha=0.5)
 
 
 
-#%% _____Work L M Wright Cooper notation with forced motion at the tip_____
+#%% _____Work L M W-C notation, forced motion at the tip E(y=s,\theta)_____
 
-# forced motions in the wingtip
-shift = -np.pi/2
+''' 
+Work ONLY AT the tip for diff shifts between w_tip and alpha_tip
+we impose a motion at the tip : w_tip(t), alpha_tip(t)
+then we compute L(t), M(t) at the tip with ROM.computeLiftMoment
+we compute p_w(t) = L(t)*wdot_tip(t) and p_a(t) = M(t)*alphadot_tip(t)
+then we integrate over a period to get E_w and E_a at the tip
+we repeat for different shifts between w_tip and alpha_tip
+'''
 w0 = 0.1  # m
 alpha0 = 0.6  # rad
-w_tip = w0*np.sin(omega_ref*t+shift)  # m
-wdot_tip = w0*omega_ref*np.cos(omega_ref*t+shift)  # m/s
-wdotdot_tip = -w0*omega_ref**2*np.sin(omega_ref*t+shift)  # m/s2
-alpha_tip = alpha0*np.sin(omega_ref*t)      # rad
-alphadot_tip = alpha0*omega_ref*np.cos(omega_ref*t)      # rad/s
-alphadotdot_tip = -alpha0*omega_ref**2*np.sin(omega_ref*t)      # rad/s2
-
-T_period = (2*np.pi)/omega_ref
+omega = 2 * np.pi * model.f[idx_U, mode]             # rad/s
+T_period = 2 * np.pi / omega
 
 nb_shifts = 60
 shifts = np.linspace(-np.pi, np.pi, nb_shifts)
-# L = np.zeros((len(t),nb_shifts))
-# M = np.zeros((len(t),nb_shifts))
+
 E_w = np.zeros(nb_shifts)
 E_a = np.zeros(nb_shifts)
 for i, shift in enumerate(shifts):
-    w_tip = -w0*np.sin(omega_ref*t+shift)  # m
-    wdot_tip = -w0*omega_ref*np.cos(omega_ref*t+shift)  # m/s
-    wdotdot_tip = w0*omega_ref**2*np.sin(omega_ref*t+shift)  # m/s2
-    alpha_tip = alpha0*np.sin(omega_ref*t)      # rad
-    alphadot_tip = alpha0*omega_ref*np.cos(omega_ref*t)      # rad/s
-    alphadotdot_tip = -alpha0*omega_ref**2*np.sin(omega_ref*t)      # rad/s2
-    L, M = ROM.computeLiftMoment(par = model,U = 25,w=w_tip,alpha=alpha_tip,wdot=wdot_tip,alphadot=alphadot_tip,wdotdot=wdotdot_tip,alphadotdot=alphadotdot_tip,omega=omega_ref)
-    p_w = L*wdot_tip
+    w_tip = w0*np.sin(omega*t+shift)  # m
+    wdot_tip = w0*omega*np.cos(omega*t+shift)  # m/s
+    wdotdot_tip = -w0*omega**2*np.sin(omega*t+shift)  # m/s2
+    alpha_tip = alpha0*np.sin(omega*t)      # rad
+    alphadot_tip = alpha0*omega*np.cos(omega*t)      # rad/s
+    alphadotdot_tip = -alpha0*omega**2*np.sin(omega*t)      # rad/s2
+    L, M = ROM.computeLiftMoment(par = model,U = 25,w=w_tip,alpha=alpha_tip,wdot=wdot_tip,alphadot=alphadot_tip,wdotdot=wdotdot_tip,alphadotdot=alphadotdot_tip,omega=omega)
+    p_w = -L*wdot_tip
     p_a = M*alphadot_tip
     mask_time = (t >= t0) & (t <= t0 + T_period)
     E_w[i] = np.trapezoid(p_w[mask_time], t[mask_time])
     E_a[i] = np.trapezoid(p_a[mask_time], t[mask_time])
-
 
 fig,ax = plt.subplots(constrained_layout=True)
 ax.plot(shifts, E_w, label='bending contribution')
@@ -465,115 +490,186 @@ ax.grid(True, linewidth=0.3, alpha=0.5)
 ax.axvline(-np.pi/2, color='k', lw=1.1, ls=':', alpha=0.7)
 ax.axvline(np.pi/2, color='k', lw=1.1, ls=':', alpha=0.7)
 ax.legend()
-
-# from matplotlib.ticker import MultipleLocator, FuncFormatter
-# ax.xaxis.set_major_locator(MultipleLocator(np.pi/4))  # un pas de pi/4
-# ax.xaxis.set_major_formatter(
-#     FuncFormatter(lambda x, _: r"${:.2f}\pi$".format(x/np.pi) if x != 0 else "0")
-# )
-
 plt.show()
-    
+
+#%%________________Work ALONG the span for a given shift____________________
+'''
+we impose the motion at the tip : w_tip(t), alpha_tip(t)
+then we compute the state X_forced(t) along the span with ROM.build_state_X_from_real
+imposing a q form to force either B1/T1 or B2/T1
+
+we compute a q at each time step 
+'''
+save = True
+
+model = model
+mode = 1                     # ex : mode 2 (index 1)
+idx_U = -1                   # ex : U = max
+U = model.U[idx_U]
+omega = 2 * np.pi * model.f[idx_U, mode]  
+T_period = (2*np.pi)/omega
+
+t0, tf, dt = (0, 2, 0.001)
+t = np.arange(t0, tf+dt, dt)
+
+# arbitrary imposed amplitudes
+w0 = 0.1  # m
+alpha0 = 0.6  # rad
+
+shift = np.pi/2 # shift between w_tip and alpha_tip (positif = w leads alpha)
+
+w_tip = w0*np.sin(omega*t+shift)  # m
+wdot_tip = w0*omega*np.cos(omega*t+shift)  # m/s
+wdotdot_tip = -w0*omega**2*np.sin(omega*t+shift)  # m/s2
+alpha_tip = alpha0*np.sin(omega*t)      # rad
+alphadot_tip = alpha0*omega*np.cos(omega*t)      # rad/s
+alphadotdot_tip = -alpha0*omega**2*np.sin(omega*t)      # rad/s2
 
 # L_i, M_i = ROM.computeLiftMoment(par = model,U = 25,w=w_tip[10],alpha=alpha_tip[10],wdot=wdot_tip[10],alphadot=alphadot_tip[10],wdotdot=wdotdot_tip[10],alphadotdot=alphadotdot_tip[10],omega=omega_ref)
 U=25
-q_content = {
-    'bending' :0,
-    'torsion' :0
-}
+for k in [0,1]:
+    q_content = {
+        'bending' :k,
+        'torsion' :0
+    }
 
-X_forced = np.zeros((len(t), model.Nq*2))
-qddot_test = np.zeros((len(t), model.Nq))
-for i in range(len(t)):
-    X_forced[i,:], qddot_test[i,:] = ROM.build_state_X_from_real(par=model,w_tip=w_tip[i], alpha_tip=alpha_tip[i],
-                                                            wdot_tip=wdot_tip[i], alphadot_tip=alphadot_tip[i],
-                                                            wdotdot_tip=wdotdot_tip[i], alphadotdot_tip=alphadotdot_tip[i],
-                                                            accel = True,
-                                                            q_content = q_content)
+    X_forced = np.zeros((len(t), model.Nq*2))
+    qddot_forced = np.zeros((len(t), model.Nq))
+    for i in range(len(t)):
+        X_forced[i,:], qddot_forced[i,:] = ROM.build_state_X_from_real(par=model,w_tip=w_tip[i], alpha_tip=alpha_tip[i],
+                                                                wdot_tip=wdot_tip[i], alphadot_tip=alphadot_tip[i],
+                                                                wdotdot_tip=wdotdot_tip[i], alphadotdot_tip=alphadotdot_tip[i],
+                                                                accel = True,
+                                                                q_content = q_content)
 
-ROM.plot_w_alpha_fields(model, t, X_forced, U = U, times_to_plot = np.linspace(0, t[int(len(t)/20)], 6))
+    ROM.plot_w_alpha_fields_from_X(model, t, X_forced, U = U, times_to_plot = np.linspace(0, t[int(len(t)/20)], 6))
 
-q_forced = X_forced[:, :model.Nq]
-q_w_forced = q_forced[:, :model.Nw]
-q_a_forced = q_forced[:, model.Nw:model.Nw+model.Nalpha]
-qdot_forced = X_forced[:,model.Nq:]
-qdot_w_forced = qdot_forced[:, :model.Nw]
-qdot_a_forced = qdot_forced[:, model.Nw:model.Nw+model.Nalpha]
-qddot_forced = (A @ X_forced.T).T[:,model.Nq:model.Nq+model.Nw+model.Nalpha]
-qddot_w_forced = qddot[:, :model.Nw]
-qddot_a_forced = qddot[:, model.Nw:model.Nw+model.Nalpha]
+    A = ROM.stateMatrixAero(par=model, U=U, omega=omega)
+    q_forced = X_forced[:, :model.Nq]
+    q_w_forced = q_forced[:, :model.Nw]
+    q_a_forced = q_forced[:, model.Nw:model.Nw+model.Nalpha]
+    qdot_forced = X_forced[:,model.Nq:]
+    qdot_w_forced = qdot_forced[:, :model.Nw]
+    qdot_a_forced = qdot_forced[:, model.Nw:model.Nw+model.Nalpha]
+    qddot_forced = (A @ X_forced.T).T[:,model.Nq:model.Nq+model.Nw+model.Nalpha]
+    qddot_w_forced = qddot_forced[:, :model.Nw]
+    qddot_a_forced = qddot_forced[:, model.Nw:model.Nw+model.Nalpha]
 
-# we compute w_*_map, alpha_*_map from q_w_*_forced, q_a_*_forced
-w_map_forced, alpha_map_forced, wdot_map_forced, alphadot_map_forced, wdotdot_map_forced, alphadotdot_map_forced = ROM.gen_coord_to_physical_all(model, q_w_forced, q_a_forced, qdot_w_forced, qdot_a_forced, qddot_w_forced, qddot_a_forced)
+    # we compute w_*_map, alpha_*_map from q_w_*_forced, q_a_*_forced
+    w_map_forced, alpha_map_forced, wdot_map_forced, alphadot_map_forced, wdotdot_map_forced, alphadotdot_map_forced = ROM.gen_coord_to_physical_all(model, q_w_forced, q_a_forced, qdot_w_forced, qdot_a_forced, qddot_w_forced, qddot_a_forced)
+
+    # we plot the wing shape at t=0 to see which modes composed it
+    fig, ax = plt.subplots(constrained_layout=True, figsize=(6,4))
+    ax.plot(model.y, w_map_forced[0,:], label='w tip from simulation')
+    ax.set_xlim((0, model.s))
+    ax.set_xlabel('Spanwise location y [m]')
+    ax.set_ylim((-0.2, 0.2))
+    ax.set_ylabel('Vertical displacement w [m]')
+    ax.set_aspect('equal', adjustable='box')
+
+    # we compute the forces L and M (t,y)
+    L, M = ROM.computeLiftMoment_along_span(par = model, U = U,
+                                            w_map = w_map_forced, alpha_map = alpha_map_forced, 
+                                            wdot_map = wdot_map_forced, alphadot_map = alphadot_map_forced,
+                                            wdotdot_map = wdotdot_map_forced, alphadotdot_map = alphadotdot_map_forced,
+                                            t=t, omega = omega) 
+    
+    # we compute the power and energy distributions at each spanwise location
+    p_w, p_a, p, E_w, E_a, E = ROM.power_work_computations(par=model,L=L,M=M,wdot_map=wdot_map_forced,alphadot_map=alphadot_map_forced,t=t,omega=omega)
+    plotter.plot_aero_work_distribution(model,U=U, E_w=E_w, E_a=E_a, E=E,
+                                        save = save, filename=f'aero_work_imposed_motion_B{q_content['bending']+1}_T{q_content['torsion']+1}')
+
+    # we can finally sum the energy over the span to get total energy
+    E_w_total = np.trapezoid(E_w, model.y)
+    E_a_total = np.trapezoid(E_a, model.y)
+    E_total = np.trapezoid(E, model.y)
+    print(f'Total energy over a period at U={U} m/s : bending = {E_w_total:.6f} J, torsion = {E_a_total:.6f} J, total = {E_total:.6f} J')
+
+    # we store the results for B1T1 and B2T1 for later comparison
+    if k ==0:
+        p_w1, p_a1, p1, E_w1, E_a1, E1 = p_w, p_a, p, E_w, E_a, E
+    elif k==1:
+        p_w2, p_a2, p2, E_w2, E_a2, E2 = p_w, p_a, p, E_w, E_a, E
+
+plotter.plot_two_aero_work_distributions(
+    par = model,
+    U1=U, E_w1=E_w1, E_a1=E_a1, E1=E1,
+    U2=U, E_w2=E_w2, E_a2=E_a2, E2=E2,
+    save=save
+)
 
 
 
-fig, ax = plt.subplots(constrained_layout=True, figsize=(6,4))
-ax.plot(model.y, w_map_forced[0,:], label='w tip from simulation')
-ax.set_xlim((0, model.s))
-ax.set_xlabel('Spanwise location y [m]')
-ax.set_ylim((-0.2, 0.2))
-ax.set_ylabel('Vertical displacement w [m]')
-ax.set_aspect('equal', adjustable='box')
-# for i in range(7):
-#     ax.plot(model.y, w_map_forced[int(i*len(t)/200),:], label=f't={t[int(i*len(t)/200)]:.3f} s')
-# ax.legend()
+#%%_________________Construct harmonic motion from eigenvector at U______________________
+
+model = copy.deepcopy(model)
+# model = copy.deepcopy(model_iat)
+# model = copy.deepcopy(model_liege)
+
+# mode shape rayleigh-ritz
+Phi_w, *_ = ROM.bendingModeShapes(model)
+Phi_a, *_ = ROM.torsionModeShapes(model)
 
 
+mode = 1                     # le mode que l'on veut recréer, souvent celui instable, ex : mode 2 (index 1)
+idx_U = -1                   # ex : U = max
+U = model.U[idx_U]
+v = Vq_U[idx_U, :, mode]     # (Nq,) complexe
 
-# we compute the forces L and M (t,y)
-L = np.zeros((len(t),len(model.y)))
-M = np.zeros((len(t),len(model.y)))
-for i in range(len(model.y)):
-    w = w_map_forced[:,i]
-    alpha = alpha_map_forced[:,i]
-    wdot = wdot_map_forced[:,i]
-    alphadot = alphadot_map_forced[:,i]
-    wdotdot = wdotdot_map_forced[:,i]
-    alphadotdot = alphadotdot_map_forced[:,i]
-    L[:,i], M[:,i] = ROM.computeLiftMoment(par = model,U = U,w=w,alpha=alpha,wdot=wdot,alphadot=alphadot,wdotdot=wdotdot,alphadotdot=alphadotdot,omega=omega_ref)
+# 1) Mettre tout dans la même phase, on choisit T1 comme la ref de phase et d'amplitude
+k_ref = 3  # indice de la composante de référence (T1)
+v_aligned = v * np.exp(-1j * np.angle(v[k_ref]))
+
+# aeroelastic mode shapes psi_w(y) et psi_a(y)
+psi_w = Phi_w.T @ v_aligned[:model.Nw]                  # (Ny,) complexe
+psi_a = Phi_a.T @ v_aligned[model.Nw:model.Nq]      # (Ny,) complexe
+
+# 2) On calcule le mode aeroelastique psi(y) pour w et alpha en tant que CL des modes propres des déformations de Rayleigh-Ritz Phi_w Phi_a
+
+'''
+we note that here psi_w and psi_a are juste for the considered mode v^i (eigenvector of A(U))
+'''
+
+# 3) Construire le mouvement harmonique
+omega = 2 * np.pi * model.f[idx_U, mode]             # rad/s
+T_period = 2 * np.pi / omega
+
+t0, tf, dt = (0, 2, 0.001)
+t = np.arange(t0, tf+dt, dt)
+phasor = np.exp(1j * omega * t)[:, None]
+
+# we build w(t,y) and alpha(t,y) as real parts of the whole stuff
+w = np.real(phasor * psi_w[None, :])               
+wdot = np.real(1j * omega * phasor * psi_w[None, :])
+wdotdot = np.real(-omega**2 * phasor * psi_w[None, :])
+alpha = np.real(phasor * psi_a[None, :])       
+alphadot = np.real(1j * omega * phasor * psi_a[None, :])
+alphadotdot = np.real(-omega**2 * phasor * psi_a[None, :])
+
+plotter.plot_w_alpha_fields(par=model, t=t,
+                            w_map = w, a_map = alpha,
+                            times_to_plot = np.linspace(0, T_period, 10),
+                            U = U)
+
+L, M = ROM.computeLiftMoment_along_span(par = model, U = U,
+                                        w_map = w, alpha_map = alpha, 
+                                        wdot_map = wdot, alphadot_map = alphadot,
+                                        wdotdot_map = wdotdot, alphadotdot_map = alphadotdot,
+                                        t=t, omega = omega) 
 
 # we compute the power and energy distributions at each spanwise location
-p_w, p_a, p, E_w, E_a, E = ROM.power_work_computations(par=model,L=L,M=M,wdot_map=wdot_map_forced,alphadot_map=alphadot_map_forced,t=t,omega_ref=omega_ref)
-plotter.plot_aero_work_distribution(model,U=U, E_w=E_w, E_a=E_a, E=E,save = False)
-
-# we can finally sum the energy over the span to get total energy
-E_w_total = np.trapezoid(E_w, model.y)
-E_a_total = np.trapezoid(E_a, model.y)
-E_total = np.trapezoid(E, model.y)
-print(f'Total energy over a period at U={U} m/s : bending = {E_w_total:.6f} J, torsion = {E_a_total:.6f} J, total = {E_total:.6f} J')
+p_w, p_a, p, E_w, E_a, E = ROM.power_work_computations(par=model,L=L,M=M,wdot_map=wdot,alphadot_map=alphadot,t=t,omega=omega)
+plotter.plot_aero_work_distribution(model,U=U, E_w=E_w, E_a=E_a, E=E,
+                                    save = False, filename=f'aero_work_eigenmode_mode{mode+1}_U{model.U[idx_U]:.1f}')
 
 
-# calcul déphasage entre w et alpha en bout d'aile
-w_tip = w_map[:,-1]
-alpha_tip = alpha_map[:,-1]
 
-# FFT
-W = np.fft.fft(w_tip)
-A = np.fft.fft(alpha_tip)
-freqs = np.fft.fftfreq(len(w_tip), d=dt)  # dt = pas de temps
 
-# On prend uniquement les fréquences positives
-pos = freqs > 0
-freqs = freqs[pos]
-W = W[pos]
-A = A[pos]
-
-# Fréquence dominante
-idx = np.argmax(np.abs(W))
-
-# Phases à cette fréquence
-phi_w = np.angle(W[idx])
-phi_a = np.angle(A[idx])
-
-# Déphasage
-dphi_tip = phi_w - phi_a
-
-# On ramène dans [-pi, pi]
-dphi_tip = np.arctan2(np.sin(dphi_tip), np.cos(dphi_tip))
-
-print(f"Déphasage w / alpha au bout d'aile = {dphi_tip:.4f} rad")
-
+# Option : fixer l’amplitude au tip
+# tip_target = 0.2  # rad, par exemple
+# scale = tip_target / np.max(np.abs(psi_w[-1]))
+# w *= scale
+# alpha *= scale
 
 
 #%% plot deformation mode shapes
