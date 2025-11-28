@@ -602,9 +602,9 @@ plotter.plot_two_aero_work_distributions(
 
 #%%_________________Construct harmonic motion from eigenvector at U______________________
 
-model = copy.deepcopy(model)
+# model = copy.deepcopy(model)
 # model = copy.deepcopy(model_iat)
-# model = copy.deepcopy(model_liege)
+model = copy.deepcopy(model_liege)
 
 # mode shape rayleigh-ritz
 Phi_w, *_ = ROM.bendingModeShapes(model)

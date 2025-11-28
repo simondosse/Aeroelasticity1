@@ -1159,7 +1159,7 @@ def plot_aero_work_distribution(par, U, E_w, E_a, E,
     '''    
     fig, ax = plt.subplots(constrained_layout=True, figsize=(6, 4))
     ax.plot(E_w, par.y, lw=1, color = colors_set['strong_blue'],  label=r'bending work')
-    ax.plot(E_a, par.y, lw=1, color = colors_set['strong_purple'], label=r'borsion work')
+    ax.plot(E_a, par.y, lw=1, color = colors_set['strong_purple'], label=r'torsion work')
     ax.plot(E, par.y, lw=2, color='k', label='total work')
     
 
